@@ -38,6 +38,9 @@ struct AppState {
     store: Arc<Store>,
     analyze_limiter: Arc<RateLimiter>,
     feedback_limiter: Arc<RateLimiter>,
+    login_limiter: Arc<RateLimiter>,
+    admin_user: Arc<String>,
+    admin_password: Arc<String>,
     admin_token: Arc<String>,
     ip_salt: Arc<String>,
     geo_cache: Arc<Mutex<HashMap<String, geo::GeoInfo>>>,
@@ -55,12 +58,16 @@ async fn main() {
     let db_path = std::env::var("DB_PATH").unwrap_or_else(|_| "data/analytics.db".into());
     let store = Arc::new(Store::open(&db_path).unwrap_or_else(|e| panic!("DB open {db_path}: {e}")));
 
-    let admin_token = std::env::var("ADMIN_TOKEN").ok().filter(|t| !t.is_empty()).unwrap_or_else(|| {
-        let t = security::random_token();
-        tracing::warn!("ADMIN_TOKEN not set — generated temporary token: {t}");
-        println!("\n  ⚠ ADMIN_TOKEN not set. Temporary admin token (set ADMIN_TOKEN to make it permanent):\n    {t}\n");
-        t
+    // Admin login: username + password (env). Password is generated & logged if unset.
+    let admin_user = std::env::var("ADMIN_USER").ok().filter(|u| !u.is_empty()).unwrap_or_else(|| "admin".into());
+    let admin_password = std::env::var("ADMIN_PASSWORD").ok().filter(|p| !p.is_empty()).unwrap_or_else(|| {
+        let p = security::random_token();
+        tracing::warn!("ADMIN_PASSWORD not set — generated temporary password");
+        println!("\n  ⚠ ADMIN_PASSWORD not set. Log in at /admin with:\n    username: {admin_user}\n    password: {p}\n  (set ADMIN_PASSWORD to make it permanent)\n");
+        p
     });
+    // Internal bearer token used by the dashboard after login (not user-facing).
+    let admin_token = std::env::var("ADMIN_TOKEN").ok().filter(|t| !t.is_empty()).unwrap_or_else(security::random_token);
     let ip_salt = std::env::var("IP_SALT").ok().filter(|s| !s.is_empty()).unwrap_or_else(security::random_token);
 
     // Rate limits (override via env).
@@ -71,6 +78,9 @@ async fn main() {
         store,
         analyze_limiter: Arc::new(RateLimiter::new(a_max, 60)),
         feedback_limiter: Arc::new(RateLimiter::new(f_max, 60)),
+        login_limiter: Arc::new(RateLimiter::new(10, 60)),
+        admin_user: Arc::new(admin_user),
+        admin_password: Arc::new(admin_password),
         admin_token: Arc::new(admin_token),
         ip_salt: Arc::new(ip_salt),
         geo_cache: Arc::new(Mutex::new(HashMap::new())),
@@ -85,6 +95,7 @@ async fn main() {
         .route("/health", get(health))
         .route("/api/analyze", post(analyze))
         .route("/api/feedback", post(feedback))
+        .route("/api/admin/login", post(admin_login))
         .route("/api/admin/stats", get(admin_stats))
         .layer(middleware::from_fn(security_headers))
         .layer(DefaultBodyLimit::max(max_mb * 1024 * 1024))
@@ -297,6 +308,35 @@ async fn feedback(
 }
 
 // ----------------------------- admin -----------------------------
+
+#[derive(Deserialize)]
+struct LoginBody {
+    username: Option<String>,
+    password: Option<String>,
+}
+
+/// Validate username + password; on success return the internal bearer token
+/// the dashboard then uses for /api/admin/stats.
+async fn admin_login(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Json(body): Json<LoginBody>,
+) -> Response {
+    let ip = security::client_ip(&headers, Some(peer));
+    if !st.login_limiter.check(&ip) {
+        return too_many();
+    }
+    let user = body.username.unwrap_or_default();
+    let pass = body.password.unwrap_or_default();
+    let ok = security::token_matches(&user, &st.admin_user)
+        && security::token_matches(&pass, &st.admin_password);
+    if ok {
+        (StatusCode::OK, Json(json!({ "ok": true, "token": st.admin_token.as_str() }))).into_response()
+    } else {
+        (StatusCode::UNAUTHORIZED, Json(json!({ "ok": false, "error": "Invalid username or password" }))).into_response()
+    }
+}
 
 async fn admin_stats(
     State(st): State<AppState>,

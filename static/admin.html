@@ -94,12 +94,13 @@
     </div>
   </div>
 
-  <!-- token gate -->
+  <!-- login gate -->
   <div class="gate" id="gate">
-    <h2>🔒 Admin access</h2>
-    <p>Enter the admin token. Set <span class="mono">ADMIN_TOKEN</span> as an env var on the server; if unset, a temporary token is printed to the server logs at startup.</p>
-    <input type="password" id="tokenInput" placeholder="Admin token" autocomplete="off" />
-    <button id="enterBtn">Unlock dashboard</button>
+    <h2>🔒 Admin login</h2>
+    <p>Sign in with your admin username and password. Set <span class="mono">ADMIN_USER</span> and <span class="mono">ADMIN_PASSWORD</span> as env vars on the server; if the password is unset, a temporary one is printed to the server logs at startup.</p>
+    <input type="text" id="userInput" placeholder="Username" autocomplete="username" />
+    <input type="password" id="passInput" placeholder="Password" autocomplete="current-password" style="margin-top:10px" />
+    <button id="enterBtn">Sign in</button>
     <div class="err" id="gateErr"></div>
   </div>
 
@@ -154,19 +155,37 @@ let token=localStorage.getItem("sa-admin-token")||"";
 
 if(token) load();
 
-$("enterBtn").addEventListener("click",()=>{ token=$("tokenInput").value.trim(); load(); });
-$("tokenInput").addEventListener("keydown",e=>{ if(e.key==="Enter"){ token=$("tokenInput").value.trim(); load(); }});
+$("enterBtn").addEventListener("click",login);
+$("passInput").addEventListener("keydown",e=>{ if(e.key==="Enter") login(); });
+$("userInput").addEventListener("keydown",e=>{ if(e.key==="Enter") login(); });
 $("refreshBtn").addEventListener("click",load);
 $("logoutBtn").addEventListener("click",()=>{ localStorage.removeItem("sa-admin-token"); location.reload(); });
 
-async function load(){
-  if(!token){ showGateErr("Please enter a token."); return; }
+async function login(){
+  const username=$("userInput").value.trim(), password=$("passInput").value;
+  if(!username||!password){ showGateErr("Enter username and password."); return; }
   try{
-    const res=await fetch(API_BASE+"/api/admin/stats",{headers:{Authorization:"Bearer "+token}});
-    if(res.status===401){ showGateErr("Invalid token."); return; }
+    const res=await fetch(API_BASE+"/api/admin/login",{
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({username,password})
+    });
+    if(res.status===429){ showGateErr("Too many attempts — wait a minute and try again."); return; }
+    if(res.status===401){ showGateErr("Invalid username or password."); return; }
     if(!res.ok){ showGateErr("Server error ("+res.status+")."); return; }
     const d=await res.json();
+    token=d.token;
     localStorage.setItem("sa-admin-token",token);
+    load();
+  }catch(e){ showGateErr("Could not reach server."); }
+}
+
+async function load(){
+  if(!token){ return; }
+  try{
+    const res=await fetch(API_BASE+"/api/admin/stats",{headers:{Authorization:"Bearer "+token}});
+    if(res.status===401){ localStorage.removeItem("sa-admin-token"); token=""; showGateErr("Session expired — please sign in again."); return; }
+    if(!res.ok){ showGateErr("Server error ("+res.status+")."); return; }
+    const d=await res.json();
     $("gate").style.display="none"; $("dash").style.display="block"; $("topright").style.display="flex";
     render(d);
   }catch(e){ showGateErr("Could not reach server."); }

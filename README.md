@@ -209,7 +209,9 @@ Liveness probe → `{"status":"ok", ...}`.
 |---------|---------|----------------------------------|
 | `PORT`  | `8000`  | HTTP listen port                 |
 | `RUST_LOG` | `statement_analyzer=info` | log filter (e.g. `debug`) |
-| `ADMIN_TOKEN` | *(random, logged at startup)* | token for the `/admin` dashboard — **set this in production** |
+| `ADMIN_USER` | `admin` | admin dashboard login username |
+| `ADMIN_PASSWORD` | *(random, logged at startup)* | admin dashboard login password — **set this in production** |
+| `ADMIN_TOKEN` | *(random)* | internal session token issued after login (rarely set manually) |
 | `DB_PATH` | `data/analytics.db` | SQLite analytics file (use a persistent volume in prod) |
 | `IP_SALT` | *(random per start)* | salt for hashing IPs; set a fixed value to keep unique-IP counts stable across restarts |
 | `MAX_UPLOAD_MB` | `200` | max upload size in MB |
@@ -226,15 +228,16 @@ Liveness probe → `{"status":"ok", ...}`.
 - **Upload cap** — `MAX_UPLOAD_MB` (default 200 MB) rejects oversized bodies.
 - **Privacy** — raw IPs are never stored; only a salted SHA-256 hash (for unique-IP counts) plus
   a coarse country/region. Visitors are identified by a random client-generated id (localStorage).
-- **Admin dashboard** at **`/admin`** — token-gated (`ADMIN_TOKEN`). Shows unique visitors, total
-  analyses, country/region breakdown, daily activity, average rating, "would you pay" results, and
-  recent reviews. The token is checked server-side on `GET /api/admin/stats` (`Authorization: Bearer <token>`).
+- **Admin dashboard** at **`/admin`** — **username + password login** (`ADMIN_USER` / `ADMIN_PASSWORD`).
+  `POST /api/admin/login` validates the credentials (rate-limited, 10/min/IP) and returns a session
+  token the dashboard uses for `GET /api/admin/stats`. Shows unique visitors, total analyses,
+  country/region breakdown, daily activity, average rating, "would you pay" results, and recent reviews.
 - **Feedback** — after a user's first analysis the UI asks for a star rating, a "would you pay for
   this?" answer, and an optional review; results are stored and surfaced in the admin dashboard.
 
 > **Persistence on Railway:** the SQLite DB lives at `DB_PATH` (default `data/analytics.db`). Attach a
 > Railway **Volume** mounted at `/app/data` (or set `DB_PATH` to the volume path) so analytics survive
-> redeploys. Also set `ADMIN_TOKEN` and `IP_SALT` to fixed values in the service variables.
+> redeploys. Also set `ADMIN_USER`, `ADMIN_PASSWORD` and `IP_SALT` to fixed values in the service variables.
 
 ---
 
