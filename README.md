@@ -97,6 +97,48 @@ PORT=9000 ./target/release/statement-analyzer
 
 ---
 
+## Deploying — Vercel (frontend) + Railway (API)
+
+This is a long-running Rust server, so the **API runs on Railway** (or any host that runs a
+binary/Docker), and the **static page is hosted on Vercel**. CORS is already permissive, so
+the Vercel page can call the Railway API cross-origin.
+
+> ⚠️ The API cannot run on Vercel itself — Vercel serverless functions cap request bodies at
+> ~4.5 MB and time out in seconds, which defeats the "scan big files" goal. Railway runs the
+> actual binary with no such limits.
+
+### 1) Deploy the API on Railway
+1. Push this repo to GitHub (already done).
+2. Railway → **New Project → Deploy from GitHub repo** → pick this repo.
+3. Railway auto-detects the [`Dockerfile`](Dockerfile) (config in [`railway.json`](railway.json));
+   it builds and starts the server. `PORT` is injected automatically.
+4. Under **Settings → Networking → Generate Domain** to get a public URL, e.g.
+   `https://statement-analyzer-production.up.railway.app`.
+5. Verify: open `https://<your-railway-domain>/health` → `{"status":"ok",...}`.
+
+The Docker image includes `p7zip-full` + `unar`, so RAR/7z/tar archive uploads work in prod.
+
+### 2) Deploy the frontend on Vercel
+1. Point the frontend at your Railway API: edit [`static/config.js`](static/config.js):
+   ```js
+   window.API_BASE = "https://<your-railway-domain>";
+   ```
+   Commit & push.
+2. Vercel → **Add New → Project** → import this repo.
+3. Settings are read from [`vercel.json`](vercel.json): no build step, serves the `static/`
+   folder. (If Vercel asks, set **Framework Preset = Other**, **Output Directory = `static`**.)
+4. Deploy. Your page is live at `https://<project>.vercel.app`, talking to the Railway API.
+
+> Tip: you can test against any backend without redeploying via a URL override —
+> `https://<project>.vercel.app/?api=https://<your-railway-domain>`.
+
+### Single-host alternative (simplest)
+The Rust binary already serves the UI **and** the API together, so you can skip Vercel
+entirely and just deploy the Railway service — open its domain and the whole app is there.
+In that mode `config.js` is served by the binary with `API_BASE` blank (same origin).
+
+---
+
 ## API
 
 ### `POST /api/analyze`

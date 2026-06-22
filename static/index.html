@@ -230,9 +230,17 @@
   <footer>Statement Analyzer · Rust + Axum engine · deterministic, no AI</footer>
 </div>
 
+<!-- API base config: served from /config.js (Rust binary = same origin; Vercel = your Railway URL) -->
+<script src="config.js"></script>
 <script>
 const $=(id)=>document.getElementById(id);
 let selectedFile=null, lastData=null;
+
+// Where the Rust API lives. Empty = same origin (local / single-host deploy).
+// On a Vercel-hosted frontend, config.js sets window.API_BASE to your Railway URL.
+// Optional one-off override: ?api=https://... in the URL.
+const API_BASE = (new URLSearchParams(location.search).get("api")
+  || window.API_BASE || "").replace(/\/+$/,"");
 
 const fileInput=$("fileInput");
 $("fileBtn").addEventListener("click",()=>fileInput.click());
@@ -268,7 +276,7 @@ async function analyze(){
   fd.append("file",selectedFile);
   fd.append("query",$("query").value||"");
   try{
-    const res=await fetch("/api/analyze",{method:"POST",body:fd});
+    const res=await fetch(API_BASE+"/api/analyze",{method:"POST",body:fd});
     const data=await res.json();
     if(!res.ok||data.ok===false) throw new Error(data.error||(data.warnings&&data.warnings[0])||"Analysis failed");
     lastData=data; render(data);

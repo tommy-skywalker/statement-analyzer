@@ -36,6 +36,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(index))
+        .route("/config.js", get(config_js))
         .route("/health", get(health))
         .route("/api/analyze", post(analyze))
         .layer(DefaultBodyLimit::max(MAX_UPLOAD))
@@ -55,6 +56,15 @@ async fn main() {
 
 async fn index() -> Html<&'static str> {
     Html(INDEX_HTML)
+}
+
+/// When the Rust binary serves the page directly, the API is same-origin, so
+/// the config just leaves API_BASE blank. (On Vercel, static/config.js is used.)
+async fn config_js() -> impl IntoResponse {
+    (
+        [(axum::http::header::CONTENT_TYPE, "application/javascript")],
+        "window.API_BASE = \"\"; // same-origin (served by Rust binary)\n",
+    )
 }
 
 async fn health() -> impl IntoResponse {
