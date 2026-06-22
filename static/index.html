@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Statement Analyzer — Ledger Intelligence</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --card:#ffffff; --ink:#15181e; --ink-2:#3a4049; --muted:#8b919c;
+    --faint:#aab0bb; --line:#ececf1; --line-2:#f2f3f6;
+    --accent:#7c5cff; --accent-2:#9b8cff; --accent-soft:#efeaff;
+    --green:#15a35b; --green-bg:#e6f7ee; --red:#e5484d; --red-bg:#fdebeb;
+    --amber:#bd7b16; --amber-bg:#fdf2e1; --blue:#3b6ef5; --blue-bg:#e9f0ff;
+    --radius:16px; --radius-sm:11px;
+    --shadow:0 1px 2px rgba(16,24,40,.04), 0 10px 28px rgba(16,24,40,.06);
+    --shadow-sm:0 1px 2px rgba(16,24,40,.05);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Inter,Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased; line-height:1.5;
+  }
+  .app{max-width:1180px;margin:0 auto;padding:22px 24px 80px}
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,monospace}
+  .muted{color:var(--muted)}
+
+  /* top bar */
+  .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:30px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px}
+  .brand .logo{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:#fff;
+    background:linear-gradient(135deg,var(--accent-2),var(--accent));font-size:15px}
+  .topbar .right{display:flex;gap:10px}
+  .btn-ghost{display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--line);
+    color:var(--ink-2);font-size:13px;font-weight:600;padding:9px 14px;border-radius:10px;cursor:pointer;
+    box-shadow:var(--shadow-sm);transition:.15s}
+  .btn-ghost:hover{border-color:#dfe2e8;background:#fbfbfd}
+  .btn-ghost[disabled]{opacity:.5;cursor:not-allowed}
+
+  /* centered command / search hero */
+  .hero{text-align:center;margin:6px auto 26px;max-width:720px}
+  .hero h1{font-size:clamp(26px,4vw,36px);font-weight:760;letter-spacing:-.02em}
+  .hero p{color:var(--muted);margin-top:8px;font-size:15px}
+  .searchbar{display:flex;gap:10px;margin:22px auto 0;background:var(--card);border:1px solid var(--line);
+    padding:9px;border-radius:16px;box-shadow:var(--shadow);align-items:center}
+  .file-btn{flex:none;display:flex;align-items:center;gap:8px;border:1px dashed #d6d9e0;background:#fafafe;
+    color:var(--ink-2);font-weight:600;font-size:14px;padding:11px 15px;border-radius:11px;cursor:pointer;transition:.15s;white-space:nowrap}
+  .file-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+  .file-btn.ready{border-style:solid;border-color:var(--green);color:var(--green);background:var(--green-bg)}
+  .search-input{flex:1;border:none;outline:none;font-size:15px;color:var(--ink);background:transparent;padding:0 8px;min-width:120px}
+  .search-input::placeholder{color:var(--faint)}
+  .go-btn{flex:none;border:none;cursor:pointer;color:#fff;font-weight:700;font-size:14px;padding:12px 22px;border-radius:11px;
+    background:linear-gradient(135deg,var(--accent-2),var(--accent));box-shadow:0 6px 16px rgba(124,92,255,.32);transition:.15s}
+  .go-btn:hover{filter:brightness(1.05);transform:translateY(-1px)}
+  .go-btn:disabled{opacity:.6;cursor:not-allowed;transform:none}
+  .heronote{margin-top:11px;font-size:12.5px;color:var(--faint)}
+  .heronote b{color:var(--green)}
+
+  /* loading + error */
+  .loading{display:none;text-align:center;padding:50px;color:var(--muted)}
+  .loading.show{display:block}
+  .spinner{width:34px;height:34px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--accent);margin:0 auto 12px;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .errbox{display:none;max-width:720px;margin:0 auto;background:var(--red-bg);border:1px solid #f6c9c9;color:#b3262b;
+    padding:13px 16px;border-radius:12px;font-size:14px}
+  .errbox.show{display:block}
+
+  /* dashboard */
+  #results{display:none}
+  #results.show{display:block;animation:rise .35s ease both}
+  @keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+
+  .dash-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin:6px 0 18px}
+  .dash-head h2{font-size:24px;font-weight:740;letter-spacing:-.01em}
+  .dash-head .sub{color:var(--muted);font-size:14px;margin-top:3px}
+  .cur-chip{display:flex;align-items:center;gap:9px;background:var(--accent-soft);border:1px solid #e0d8ff;
+    color:var(--accent);font-weight:700;font-size:14px;padding:9px 15px;border-radius:12px}
+  .cur-chip .sym{font-size:17px}
+
+  /* stat cards */
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:18px}
+  @media(max-width:860px){.stats{grid-template-columns:1fr}}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;box-shadow:var(--shadow)}
+  .stat .top{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:13px;font-weight:600;margin-bottom:13px}
+  .stat .ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:15px}
+  .ic.green{background:var(--green-bg);color:var(--green)} .ic.red{background:var(--red-bg);color:var(--red)} .ic.purple{background:var(--accent-soft);color:var(--accent)}
+  .stat .big{font-size:30px;font-weight:770;letter-spacing:-.02em}
+  .stat .big.green{color:var(--green)} .stat .big.red{color:var(--red)}
+  .stat .foot{margin-top:6px;font-size:13px;color:var(--muted)}
+  .delta{display:inline-flex;align-items:center;gap:4px;font-weight:700;font-size:12px;padding:2px 8px;border-radius:999px}
+  .delta.up{background:var(--green-bg);color:var(--green)} .delta.down{background:var(--red-bg);color:var(--red)}
+
+  /* two-column layout */
+  .cols{display:grid;grid-template-columns:1.65fr 1fr;gap:18px}
+  @media(max-width:980px){.cols{grid-template-columns:1fr}}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+  .panel-head{display:flex;align-items:center;justify-content:space-between;padding:17px 20px;border-bottom:1px solid var(--line-2)}
+  .panel-head h3{font-size:15px;font-weight:700}
+  .panel-head .link{color:var(--accent);font-weight:600;font-size:13px;text-decoration:none;cursor:pointer}
+
+  /* table */
+  .tscroll{max-height:560px;overflow:auto}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  thead th{position:sticky;top:0;background:var(--card);text-align:left;font-size:11px;letter-spacing:.05em;
+    text-transform:uppercase;color:var(--faint);font-weight:700;padding:11px 20px;border-bottom:1px solid var(--line-2)}
+  tbody td{padding:13px 20px;border-bottom:1px solid var(--line-2);color:var(--ink-2);vertical-align:middle}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:#fafaff}
+  td.date{color:var(--ink);font-weight:600;white-space:nowrap}
+  td.desc{color:var(--ink-2);max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  td.amt{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+  td.amt.green{color:var(--green)} td.amt.red{color:var(--red)}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;padding:4px 11px;border-radius:999px}
+  .pill .dot{width:7px;height:7px;border-radius:50%}
+  .pill.credit{background:var(--green-bg);color:var(--green)} .pill.credit .dot{background:var(--green)}
+  .pill.debit{background:var(--red-bg);color:var(--red)} .pill.debit .dot{background:var(--red)}
+  .empty{padding:40px;text-align:center;color:var(--muted);font-size:14px}
+
+  /* right column */
+  .right{display:flex;flex-direction:column;gap:18px}
+  .breakdown{padding:20px}
+  .breakdown h3{font-size:15px;font-weight:700;margin-bottom:4px}
+  .breakdown .net{font-size:30px;font-weight:780;letter-spacing:-.02em;margin:8px 0 2px}
+  .breakdown .netlabel{font-size:13px;color:var(--muted);margin-bottom:16px}
+  .brow{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-top:1px solid var(--line-2);font-size:14px}
+  .brow .k{color:var(--ink-2)} .brow .v{font-weight:700;font-variant-numeric:tabular-nums}
+  .brow .v.green{color:var(--green)} .brow .v.red{color:var(--red)}
+  .brow.total{border-top:1.5px solid var(--line);margin-top:4px;padding-top:13px}
+  .brow.total .k{font-weight:700;color:var(--ink)} .brow.total .v{font-size:17px}
+  .viewbtn{display:block;width:100%;text-align:center;margin-top:16px;border:none;cursor:pointer;color:#fff;font-weight:700;
+    font-size:14px;padding:13px;border-radius:12px;background:linear-gradient(135deg,var(--accent-2),var(--accent));box-shadow:0 6px 16px rgba(124,92,255,.3)}
+  .viewbtn:hover{filter:brightness(1.05)}
+
+  /* side detail cards */
+  .side{padding:18px 20px}
+  .side .shead{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .side .shead .t{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px}
+  .side .shead .t.green{color:var(--green)} .side .shead .t.red{color:var(--red)}
+  .side .tag{font-size:11.5px;font-weight:700;padding:3px 10px;border-radius:999px}
+  .side .tag.green{background:var(--green-bg);color:var(--green)} .side .tag.red{background:var(--red-bg);color:var(--red)}
+  .kv{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+  .kv .cell{background:#fafafe;border:1px solid var(--line-2);border-radius:11px;padding:10px 12px}
+  .kv .cell.span{grid-column:1/-1}
+  .kv .cell .k{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);font-weight:700}
+  .kv .cell .v{font-size:14.5px;font-weight:700;margin-top:3px;color:var(--ink)}
+
+  /* currency gradient card */
+  .curcard{position:relative;overflow:hidden;border-radius:var(--radius);padding:20px;color:#fff;
+    background:linear-gradient(135deg,#8b7bff 0%,#6d4cff 55%,#5b34f0 100%);box-shadow:var(--shadow)}
+  .curcard::after{content:"";position:absolute;right:-40px;top:-40px;width:160px;height:160px;border-radius:50%;background:rgba(255,255,255,.12)}
+  .curcard .lab{font-size:12px;opacity:.85;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+  .curcard .big{font-size:30px;font-weight:800;margin:8px 0 2px;display:flex;align-items:center;gap:10px}
+  .curcard .sub{font-size:13px;opacity:.9}
+  .curcard .conf{position:relative;margin-top:16px;display:flex;align-items:center;justify-content:space-between;font-size:13px}
+  .curcard .badge{background:rgba(255,255,255,.18);padding:5px 12px;border-radius:999px;font-weight:700;font-size:12px}
+
+  /* warnings */
+  .warns{margin-top:18px;display:flex;flex-direction:column;gap:8px}
+  .warn{display:flex;gap:9px;background:var(--amber-bg);border:1px solid #f3dcb4;color:#8a5d10;padding:10px 14px;border-radius:11px;font-size:13px}
+
+  footer{text-align:center;color:var(--faint);font-size:12px;margin-top:44px}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="brand"><span class="logo">▥</span> Statement Analyzer</div>
+    <div class="right">
+      <button class="btn-ghost" id="exportBtn" disabled>⤓ Export JSON</button>
+      <button class="btn-ghost" onclick="location.reload()">↻ New analysis</button>
+    </div>
+  </div>
+
+  <section class="hero">
+    <h1>Analyze any bank statement</h1>
+    <p>Upload a statement in any format, then search a name or keyword to break down debits &amp; credits.</p>
+    <div class="searchbar">
+      <button class="file-btn" id="fileBtn">📄 Choose file</button>
+      <input class="search-input" id="query" placeholder="Search a name or keyword — e.g. JOHN DOE, SALARY, UBER" autocomplete="off" />
+      <button class="go-btn" id="analyzeBtn">Analyze</button>
+    </div>
+    <div class="heronote" id="heronote">PDF · CSV · XLSX · TXT · ZIP/RAR/7z · up to 1&nbsp;GB &nbsp;·&nbsp; leave keyword blank to analyse everything</div>
+    <input type="file" id="fileInput" hidden
+      accept=".pdf,.csv,.tsv,.xlsx,.xls,.xlsm,.ods,.txt,.log,.zip,.rar,.7z,.tar,.gz" />
+  </section>
+
+  <div class="loading" id="loading"><div class="spinner"></div><div>Parsing &amp; scanning transactions…</div></div>
+  <div class="errbox" id="error"></div>
+
+  <section id="results">
+    <div class="dash-head">
+      <div>
+        <h2 id="resTitle">Analysis results</h2>
+        <div class="sub" id="resSub"></div>
+      </div>
+      <div class="cur-chip" id="curChip"></div>
+    </div>
+
+    <div class="stats" id="stats"></div>
+
+    <div class="cols">
+      <div class="left">
+        <div class="panel">
+          <div class="panel-head">
+            <h3>Transaction history</h3>
+            <span class="muted mono" id="txCount" style="font-size:12.5px"></span>
+          </div>
+          <div class="tscroll">
+            <table>
+              <thead><tr>
+                <th>Date</th><th>Description</th><th>Source</th><th>Type</th><th style="text-align:right">Amount</th>
+              </tr></thead>
+              <tbody id="txBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="warns" id="warns"></div>
+      </div>
+
+      <div class="right">
+        <div class="panel breakdown" id="breakdown"></div>
+        <div class="panel side" id="creditSide"></div>
+        <div class="panel side" id="debitSide"></div>
+        <div class="curcard" id="curCard"></div>
+      </div>
+    </div>
+  </section>
+
+  <footer>Statement Analyzer · Rust + Axum engine · deterministic, no AI</footer>
+</div>
+
+<script>
+const $=(id)=>document.getElementById(id);
+let selectedFile=null, lastData=null;
+
+const fileInput=$("fileInput");
+$("fileBtn").addEventListener("click",()=>fileInput.click());
+fileInput.addEventListener("change",e=>setFile(e.target.files[0]));
+$("analyzeBtn").addEventListener("click",analyze);
+$("query").addEventListener("keydown",e=>{if(e.key==="Enter")analyze();});
+$("exportBtn").addEventListener("click",exportJson);
+
+// allow dropping anywhere on the hero
+const hero=document.querySelector(".hero");
+["dragover","dragenter"].forEach(ev=>hero.addEventListener(ev,e=>{e.preventDefault();}));
+hero.addEventListener("drop",e=>{e.preventDefault(); if(e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);});
+
+function setFile(f){
+  if(!f)return;
+  selectedFile=f;
+  const btn=$("fileBtn");
+  btn.classList.add("ready");
+  btn.textContent="✓ "+truncate(f.name,26);
+  $("heronote").innerHTML='<b>'+escapeHtml(f.name)+'</b> · '+humanSize(f.size)+' ready — type a keyword and hit Analyze';
+}
+function humanSize(b){if(b>=1073741824)return(b/1073741824).toFixed(2)+" GB";if(b>=1048576)return(b/1048576).toFixed(2)+" MB";if(b>=1024)return(b/1024).toFixed(1)+" KB";return b+" B";}
+function fmtNum(n){return(n??0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});}
+function fmtInt(n){return(n??0).toLocaleString();}
+
+async function analyze(){
+  if(!selectedFile){showError("Please choose a statement file first.");return;}
+  hideError();
+  $("results").classList.remove("show");
+  $("loading").classList.add("show");
+  $("analyzeBtn").disabled=true;
+  const fd=new FormData();
+  fd.append("file",selectedFile);
+  fd.append("query",$("query").value||"");
+  try{
+    const res=await fetch("/api/analyze",{method:"POST",body:fd});
+    const data=await res.json();
+    if(!res.ok||data.ok===false) throw new Error(data.error||(data.warnings&&data.warnings[0])||"Analysis failed");
+    lastData=data; render(data);
+  }catch(err){showError(err.message||String(err));}
+  finally{$("loading").classList.remove("show");$("analyzeBtn").disabled=false;}
+}
+
+function render(d){
+  const c=d.currency, sym=c.symbol;
+  $("exportBtn").disabled=false;
+
+  // header
+  $("resTitle").textContent = d.query ? `Results for “${d.query}”` : "Analysis of all transactions";
+  $("resSub").innerHTML = `${escapeHtml(d.file.name)} · ${d.file.kind.toUpperCase()} · ${d.file.size_human} · `
+    + `scanned ${fmtInt(d.summary.total_transactions_scanned)} · matched <b>${fmtInt(d.summary.matched_transactions)}</b> · `
+    + `${d.elapsed_ms} ms · ${d.throughput_mb_s} MB/s`;
+  $("curChip").innerHTML = `<span class="sym">${escapeHtml(sym)}</span> ${escapeHtml(c.code)}`;
+
+  // stat cards
+  const net=d.summary.net_amount, netPos=net>=0;
+  $("stats").innerHTML = `
+    ${statCard("green","↑","Money in · Credit",d.credit.total_formatted,`${fmtInt(d.credit.count)} transactions`)}
+    ${statCard("red","↓","Money out · Debit",d.debit.total_formatted,`${fmtInt(d.debit.count)} transactions`)}
+    ${statCard("purple","≈","Net flow",d.summary.net_formatted,
+       `<span class="delta ${netPos?'up':'down'}">${netPos?'▲ surplus':'▼ deficit'}</span> over ${d.summary.overall_duration?escapeHtml(d.summary.overall_duration.human):'—'}`,
+       netPos?'green':'red')}`;
+
+  // transaction table
+  const tx=d.matched||[];
+  $("txCount").textContent = tx.length ? `${tx.length}${d.matched_truncated?" (capped)":""} shown` : "";
+  $("txBody").innerHTML = tx.length ? tx.map(t=>`
+    <tr>
+      <td class="date">${t.date?escapeHtml(t.date):"—"}</td>
+      <td class="desc" title="${escapeHtml(t.description)}">${escapeHtml(t.description)}</td>
+      <td class="muted">${escapeHtml(sourceShort(t.source))}</td>
+      <td><span class="pill ${t.direction}"><span class="dot"></span>${cap(t.direction)}</span></td>
+      <td class="amt ${t.direction==='credit'?'green':'red'}">${t.direction==='credit'?'+':'−'}${sym}${fmtNum(t.amount)}</td>
+    </tr>`).join("") : `<tr><td colspan="5" class="empty">No transactions matched this keyword.</td></tr>`;
+
+  // breakdown panel
+  $("breakdown").innerHTML = `
+    <h3>Analysis breakdown</h3>
+    <div class="net" style="color:${netPos?'var(--green)':'var(--red)'}">${escapeHtml(d.summary.net_formatted)}</div>
+    <div class="netlabel">Net flow across ${fmtInt(d.summary.matched_transactions)} matched transactions</div>
+    <div class="brow"><span class="k">Total credit (in)</span><span class="v green">+${escapeHtml(stripSign(d.credit.total_formatted))}</span></div>
+    <div class="brow"><span class="k">Total debit (out)</span><span class="v red">−${escapeHtml(stripSign(d.debit.total_formatted))}</span></div>
+    <div class="brow"><span class="k">Credit transactions</span><span class="v">${fmtInt(d.credit.count)}</span></div>
+    <div class="brow"><span class="k">Debit transactions</span><span class="v">${fmtInt(d.debit.count)}</span></div>
+    <div class="brow"><span class="k">Activity period</span><span class="v">${d.summary.overall_duration?escapeHtml(d.summary.overall_duration.human):'—'}</span></div>
+    <div class="brow total"><span class="k">Net result</span><span class="v ${netPos?'green':'red'}">${escapeHtml(d.summary.net_formatted)}</span></div>
+    <button class="viewbtn" onclick="document.querySelector('.left').scrollIntoView({behavior:'smooth'})">View transactions</button>`;
+
+  // side detail cards
+  $("creditSide").innerHTML = sideCard(d.credit,"credit",sym);
+  $("debitSide").innerHTML  = sideCard(d.debit,"debit",sym);
+
+  // currency card
+  $("curCard").innerHTML = `
+    <div class="lab">Detected currency</div>
+    <div class="big"><span>${escapeHtml(sym)}</span> ${escapeHtml(c.code)}</div>
+    <div class="sub">${escapeHtml(c.name)}</div>
+    <div class="conf">
+      <span>Detected by ${escapeHtml(c.detected_by)}</span>
+      <span class="badge">${Math.round((c.confidence||0)*100)}% confidence</span>
+    </div>`;
+
+  // warnings
+  const warns=d.warnings||[];
+  $("warns").innerHTML = warns.map(w=>`<div class="warn">⚠️ <span>${escapeHtml(w)}</span></div>`).join("");
+
+  $("results").classList.add("show");
+  $("results").scrollIntoView({behavior:"smooth",block:"start"});
+}
+
+function statCard(color,icon,label,value,foot,valColor){
+  return `<div class="stat">
+    <div class="top"><span class="ic ${color}">${icon}</span>${label}</div>
+    <div class="big ${valColor||''}">${escapeHtml(value)}</div>
+    <div class="foot">${foot}</div>
+  </div>`;
+}
+function sideCard(s,kind,sym){
+  const green=kind==='credit';
+  return `<div class="shead">
+      <div class="t ${green?'green':'red'}">${green?'↑ Credit detail':'↓ Debit detail'}</div>
+      <span class="tag ${green?'green':'red'}">${fmtInt(s.count)} txns</span>
+    </div>
+    <div class="kv">
+      <div class="cell"><div class="k">Total</div><div class="v">${escapeHtml(s.total_formatted)}</div></div>
+      <div class="cell"><div class="k">Average</div><div class="v">${sym}${fmtNum(s.average)}</div></div>
+      <div class="cell"><div class="k">Largest</div><div class="v">${sym}${fmtNum(s.max)}</div></div>
+      <div class="cell"><div class="k">Smallest</div><div class="v">${sym}${fmtNum(s.min)}</div></div>
+      <div class="cell"><div class="k">First date</div><div class="v">${s.first_date||'—'}</div></div>
+      <div class="cell"><div class="k">Last date</div><div class="v">${s.last_date||'—'}</div></div>
+      <div class="cell span"><div class="k">Duration of activity</div><div class="v">${s.duration?escapeHtml(s.duration.human):'—'}</div></div>
+    </div>`;
+}
+
+function exportJson(){
+  if(!lastData)return;
+  const blob=new Blob([JSON.stringify(lastData,null,2)],{type:"application/json"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=(lastData.file.name.replace(/\.[^.]+$/,'')||'analysis')+"-analysis.json";
+  a.click(); URL.revokeObjectURL(a.href);
+}
+
+function sourceShort(s){ if(!s)return"—"; const parts=s.split("#"); const base=parts[0].split("::").pop().split("/").pop(); return parts[1]?base+" · "+parts[1]:base; }
+function stripSign(s){return String(s).replace(/^-/,'');}
+function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
+function truncate(s,n){s=String(s);return s.length<=n?s:s.slice(0,n-1)+"…";}
+function showError(m){const e=$("error");e.textContent="✕ "+m;e.classList.add("show");}
+function hideError(){$("error").classList.remove("show");}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+</script>
+</body>
+</html>

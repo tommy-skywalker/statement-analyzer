@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "statement-analyzer",
+      "runtimeExecutable": "./target/release/statement-analyzer",
+      "runtimeArgs": [],
+      "port": 8000
+    }
+  ]
+}
