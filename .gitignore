@@ -15,3 +15,9 @@
 # Local env
 .env
 .env.local
+
+# Analytics database (created at runtime)
+/data/
+*.db
+*.db-shm
+*.db-wal

@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Statement Analyzer — Admin</title>
+<style>
+  :root{
+    --bg:#0d1117; --card:#161b22; --soft:#1b212b; --ink:#e6edf3; --ink-2:#c2ccd6; --muted:#8b949e;
+    --faint:#6e7781; --line:#232a35; --accent:#8b7cff; --accent-2:#a99bff; --accent-soft:#241f3d;
+    --green:#3fb950; --green-bg:#10271b; --red:#f06d6d; --red-bg:#2a1517; --amber:#d8a23a;
+    --radius:14px; --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Inter,sans-serif;-webkit-font-smoothing:antialiased;line-height:1.5}
+  .wrap{max-width:1100px;margin:0 auto;padding:26px 22px 80px}
+  a{color:var(--accent)}
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,monospace}
+  .muted{color:var(--muted)}
+
+  .top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:24px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px}
+  .brand .logo{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:#fff;background:linear-gradient(135deg,var(--accent-2),var(--accent))}
+  .pill{font-size:12px;font-weight:700;color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent-2);padding:6px 12px;border-radius:999px}
+
+  /* gate */
+  .gate{max-width:420px;margin:80px auto;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:28px;box-shadow:var(--shadow)}
+  .gate h2{font-size:20px;font-weight:730}
+  .gate p{color:var(--muted);font-size:13.5px;margin:6px 0 18px}
+  .gate input{width:100%;background:var(--soft);border:1px solid var(--line);color:var(--ink);padding:12px 14px;border-radius:10px;font-size:14px;outline:none}
+  .gate input:focus{border-color:var(--accent)}
+  .gate button{width:100%;margin-top:12px;border:none;color:#fff;font-weight:700;font-size:14px;padding:12px;border-radius:10px;cursor:pointer;background:linear-gradient(135deg,var(--accent-2),var(--accent))}
+  .gate .err{color:var(--red);font-size:13px;margin-top:10px;display:none}
+  .gate .err.show{display:block}
+
+  #dash{display:none}
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
+  @media(max-width:880px){.cards{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:480px){.cards{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow);min-width:0}
+  .card .k{font-size:12px;color:var(--muted);font-weight:600}
+  .card .v{font-size:27px;font-weight:780;letter-spacing:-.02em;margin-top:6px;overflow-wrap:anywhere}
+  .card .v.green{color:var(--green)} .card .v.accent{color:var(--accent-2)}
+  .card .sub{font-size:12px;color:var(--faint);margin-top:3px}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+  @media(max-width:880px){.grid2{grid-template-columns:1fr}}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;margin-bottom:16px}
+  .panel h3{font-size:14px;font-weight:700;padding:15px 18px;border-bottom:1px solid var(--line)}
+  .pbody{padding:14px 18px}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:700;padding:9px 18px;border-bottom:1px solid var(--line)}
+  td{padding:10px 18px;border-bottom:1px solid var(--line);color:var(--ink-2)}
+  tr:last-child td{border-bottom:none}
+  td.r,th.r{text-align:right}
+  .tscroll{max-height:420px;overflow:auto}
+
+  .bar-row{display:flex;align-items:center;gap:10px;padding:7px 0;font-size:13px}
+  .bar-row .lab{width:130px;flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .bar-row .track{flex:1;background:var(--soft);border-radius:6px;height:14px;overflow:hidden}
+  .bar-row .fill{height:100%;background:linear-gradient(90deg,var(--accent-2),var(--accent));border-radius:6px}
+  .bar-row .num{width:80px;text-align:right;flex:none;color:var(--muted);font-variant-numeric:tabular-nums}
+
+  .days{display:flex;align-items:flex-end;gap:4px;height:120px;padding:6px 0}
+  .days .d{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0}
+  .days .d .bar{width:100%;background:linear-gradient(180deg,var(--accent-2),var(--accent));border-radius:4px 4px 0 0;min-height:2px}
+  .days .d .dl{font-size:9px;color:var(--faint);white-space:nowrap;transform:rotate(-45deg);transform-origin:center}
+
+  .pay{display:flex;gap:10px;flex-wrap:wrap}
+  .pay .seg{flex:1;min-width:90px;text-align:center;background:var(--soft);border:1px solid var(--line);border-radius:11px;padding:12px}
+  .pay .seg .n{font-size:22px;font-weight:780}
+  .pay .seg.yes .n{color:var(--green)} .pay .seg.maybe .n{color:var(--amber)} .pay .seg.no .n{color:var(--red)}
+  .pay .seg .l{font-size:12px;color:var(--muted);margin-top:2px}
+
+  .review{border:1px solid var(--line);background:var(--soft);border-radius:11px;padding:12px 14px;margin-bottom:10px}
+  .review .head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}
+  .review .stars{color:#f6b73c;font-size:14px}
+  .review .meta{font-size:11.5px;color:var(--faint)}
+  .review .txt{font-size:13.5px;color:var(--ink-2)}
+  .review .tag{font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px}
+  .review .tag.yes{background:var(--green-bg);color:var(--green)} .review .tag.maybe{background:#2a2010;color:var(--amber)} .review .tag.no{background:var(--red-bg);color:var(--red)}
+  .empty{color:var(--faint);font-size:13px;padding:14px 18px}
+  .refresh{background:var(--soft);border:1px solid var(--line);color:var(--ink-2);font-weight:600;font-size:13px;padding:8px 14px;border-radius:9px;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="brand"><span class="logo">▥</span> Statement Analyzer <span class="pill">ADMIN</span></div>
+    <div id="topright" style="display:none">
+      <button class="refresh" id="refreshBtn">↻ Refresh</button>
+      <button class="refresh" id="logoutBtn">Sign out</button>
+    </div>
+  </div>
+
+  <!-- token gate -->
+  <div class="gate" id="gate">
+    <h2>🔒 Admin access</h2>
+    <p>Enter the admin token. Set <span class="mono">ADMIN_TOKEN</span> as an env var on the server; if unset, a temporary token is printed to the server logs at startup.</p>
+    <input type="password" id="tokenInput" placeholder="Admin token" autocomplete="off" />
+    <button id="enterBtn">Unlock dashboard</button>
+    <div class="err" id="gateErr"></div>
+  </div>
+
+  <!-- dashboard -->
+  <div id="dash">
+    <div class="cards" id="cards"></div>
+
+    <div class="grid2">
+      <div class="panel">
+        <h3>Top countries / regions</h3>
+        <div class="pbody" id="countries"></div>
+      </div>
+      <div class="panel">
+        <h3>Daily activity (last 30 days)</h3>
+        <div class="pbody"><div class="days" id="days"></div></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Would you pay for this tool?</h3>
+      <div class="pbody"><div class="pay" id="pay"></div></div>
+    </div>
+
+    <div class="grid2">
+      <div class="panel">
+        <h3>Recent reviews</h3>
+        <div class="pbody tscroll" id="reviews"></div>
+      </div>
+      <div class="panel">
+        <h3>Country breakdown</h3>
+        <div class="tscroll">
+          <table><thead><tr><th>Country</th><th class="r">Runs</th><th class="r">Visitors</th></tr></thead>
+          <tbody id="countryTable"></tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Recent activity</h3>
+      <div class="tscroll">
+        <table><thead><tr><th>When</th><th>Visitor</th><th>Country</th><th>File</th><th class="r">Scanned</th><th class="r">Matched</th><th>Cur</th></tr></thead>
+        <tbody id="events"></tbody></table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $=(id)=>document.getElementById(id);
+const API_BASE=(new URLSearchParams(location.search).get("api")||"").replace(/\/+$/,"");
+let token=localStorage.getItem("sa-admin-token")||"";
+
+if(token) load();
+
+$("enterBtn").addEventListener("click",()=>{ token=$("tokenInput").value.trim(); load(); });
+$("tokenInput").addEventListener("keydown",e=>{ if(e.key==="Enter"){ token=$("tokenInput").value.trim(); load(); }});
+$("refreshBtn").addEventListener("click",load);
+$("logoutBtn").addEventListener("click",()=>{ localStorage.removeItem("sa-admin-token"); location.reload(); });
+
+async function load(){
+  if(!token){ showGateErr("Please enter a token."); return; }
+  try{
+    const res=await fetch(API_BASE+"/api/admin/stats",{headers:{Authorization:"Bearer "+token}});
+    if(res.status===401){ showGateErr("Invalid token."); return; }
+    if(!res.ok){ showGateErr("Server error ("+res.status+")."); return; }
+    const d=await res.json();
+    localStorage.setItem("sa-admin-token",token);
+    $("gate").style.display="none"; $("dash").style.display="block"; $("topright").style.display="flex";
+    render(d);
+  }catch(e){ showGateErr("Could not reach server."); }
+}
+function showGateErr(m){ const e=$("gateErr"); e.textContent="✕ "+m; e.classList.add("show"); }
+
+function render(d){
+  const bytes=humanSize(d.total_bytes);
+  $("cards").innerHTML=[
+    card("Unique visitors", fmt(d.unique_visitors), d.unique_ips+" unique IPs","accent"),
+    card("Total analyses", fmt(d.total_analyses), fmt(d.total_matched)+" txns matched"),
+    card("Data processed", bytes, fmt(d.total_scanned)+" txns scanned"),
+    card("Avg rating", (d.avg_stars?d.avg_stars.toFixed(2):"—")+" ★", d.feedback_count+" reviews","green"),
+  ].join("");
+
+  // countries bars
+  const cmax=Math.max(1,...d.by_country.map(c=>c.count));
+  $("countries").innerHTML = d.by_country.length ? d.by_country.slice(0,10).map(c=>`
+    <div class="bar-row"><div class="lab">${esc(c.country||"Unknown")}</div>
+      <div class="track"><div class="fill" style="width:${(c.count/cmax*100).toFixed(1)}%"></div></div>
+      <div class="num">${fmt(c.count)} · ${fmt(c.visitors)}u</div></div>`).join("") : empty("No data yet.");
+
+  // country table
+  $("countryTable").innerHTML = d.by_country.length ? d.by_country.map(c=>`
+    <tr><td>${esc(c.country||"Unknown")}</td><td class="r">${fmt(c.count)}</td><td class="r">${fmt(c.visitors)}</td></tr>`).join("")
+    : `<tr><td colspan="3" class="empty">No data yet.</td></tr>`;
+
+  // daily chart (oldest→newest)
+  const days=[...d.by_day].reverse();
+  const dmax=Math.max(1,...days.map(x=>x.count));
+  $("days").innerHTML = days.length ? days.map(x=>`
+    <div class="d" title="${x.day}: ${x.count} runs, ${x.visitors} visitors">
+      <div class="bar" style="height:${(x.count/dmax*100).toFixed(0)}%"></div>
+      <div class="dl">${x.day.slice(5)}</div></div>`).join("") : empty("No activity yet.");
+
+  // pay
+  const pt=d.pay_yes+d.pay_maybe+d.pay_no;
+  $("pay").innerHTML=`
+    ${seg("yes","Yes",d.pay_yes,pt)}
+    ${seg("maybe","Maybe",d.pay_maybe,pt)}
+    ${seg("no","No",d.pay_no,pt)}`;
+
+  // reviews
+  $("reviews").innerHTML = d.reviews.length ? d.reviews.map(r=>{
+    const stars="★".repeat(r.stars)+"☆".repeat(5-r.stars);
+    const pay=r.would_pay?`<span class="tag ${r.would_pay}">pay: ${r.would_pay}${r.price?" ("+esc(r.price)+")":""}</span>`:"";
+    return `<div class="review"><div class="head"><span class="stars">${r.stars?stars:""}</span>${pay}</div>
+      ${r.review?`<div class="txt">${esc(r.review)}</div>`:'<div class="txt muted">— no comment —</div>'}
+      <div class="meta">${esc(r.country||"Unknown")} · ${when(r.ts)}</div></div>`;
+  }).join("") : empty("No reviews yet.");
+
+  // recent events
+  $("events").innerHTML = d.recent_events.length ? d.recent_events.map(e=>`
+    <tr><td class="mono">${when(e.ts)}</td><td class="mono">${esc(e.visitor)}</td>
+    <td>${esc(e.country||"Unknown")}${e.region?" · "+esc(e.region):""}</td>
+    <td>${esc(e.file_kind)} · ${humanSize(e.size_bytes)}</td>
+    <td class="r">${fmt(e.scanned)}</td><td class="r">${fmt(e.matched)}</td><td>${esc(e.currency||"—")}</td></tr>`).join("")
+    : `<tr><td colspan="7" class="empty">No activity yet.</td></tr>`;
+}
+
+function card(k,v,sub,cls){ return `<div class="card"><div class="k">${k}</div><div class="v ${cls||''}">${v}</div><div class="sub">${sub}</div></div>`; }
+function seg(c,l,n,total){ const pct=total?Math.round(n/total*100):0; return `<div class="seg ${c}"><div class="n">${n}</div><div class="l">${l} · ${pct}%</div></div>`; }
+function empty(m){ return `<div class="empty">${m}</div>`; }
+function fmt(n){ return (n??0).toLocaleString(); }
+function humanSize(b){ b=+b||0; if(b>=1073741824)return(b/1073741824).toFixed(2)+" GB"; if(b>=1048576)return(b/1048576).toFixed(2)+" MB"; if(b>=1024)return(b/1024).toFixed(1)+" KB"; return b+" B"; }
+function when(ts){ const d=new Date(ts*1000); return d.toLocaleString(undefined,{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}); }
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+</script>
+</body>
+</html>

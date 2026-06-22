@@ -174,7 +174,42 @@
   .warns{margin-top:18px;display:flex;flex-direction:column;gap:8px}
   .warn{display:flex;gap:9px;background:var(--amber-bg);border:1px solid var(--amber);color:var(--amber);padding:10px 14px;border-radius:11px;font-size:13px}
 
-  footer{text-align:center;color:var(--faint);font-size:12px;margin-top:44px}
+  footer{text-align:center;color:var(--faint);font-size:12px;margin-top:44px;line-height:1.9}
+  .ghlink{display:inline-flex;align-items:center;gap:6px;color:var(--accent);text-decoration:none;font-weight:600;
+    border:1px solid var(--line);background:var(--card);padding:6px 12px;border-radius:999px;margin-top:4px;transition:.15s}
+  .ghlink:hover{border-color:var(--accent);background:var(--accent-soft)}
+
+  /* review modal */
+  .modal-overlay{position:fixed;inset:0;background:rgba(8,10,15,.55);backdrop-filter:blur(3px);display:none;
+    align-items:center;justify-content:center;padding:18px;z-index:100}
+  .modal-overlay.show{display:flex;animation:pop .18s ease both}
+  .modal{position:relative;background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);
+    width:100%;max-width:440px;padding:26px 24px;color:var(--ink)}
+  .modal-x{position:absolute;top:12px;right:14px;background:none;border:none;color:var(--faint);font-size:16px;cursor:pointer}
+  .modal h3{font-size:19px;font-weight:740;letter-spacing:-.01em}
+  .modal-sub{color:var(--muted);font-size:13.5px;margin-top:5px;margin-bottom:6px}
+  .rv-block{margin-top:16px}
+  .rv-label{display:block;font-size:12.5px;font-weight:700;color:var(--ink-2);margin-bottom:8px}
+  .stars{display:flex;gap:6px;font-size:30px;cursor:pointer;color:var(--line)}
+  .stars span{transition:.1s;color:#d7dbe2}
+  [data-theme="dark"] .stars span{color:#39414d}
+  .stars span.on{color:#f6b73c;text-shadow:0 0 12px rgba(246,183,60,.5)}
+  .stars span:hover{transform:scale(1.12)}
+  .pay-opts{display:flex;gap:8px;flex-wrap:wrap}
+  .pay-opts button{flex:1;min-width:90px;background:var(--soft);border:1.5px solid var(--line);color:var(--ink-2);
+    font-weight:700;font-size:13.5px;padding:11px;border-radius:11px;cursor:pointer;transition:.15s}
+  .pay-opts button:hover{border-color:var(--accent)}
+  .pay-opts button.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+  .rv-input{width:100%;margin-top:9px;background:var(--soft);border:1px solid var(--line);color:var(--ink);
+    padding:10px 12px;border-radius:10px;font-size:14px;outline:none;font-family:inherit;resize:vertical}
+  .rv-input:focus{border-color:var(--accent)}
+  .rv-actions{display:flex;gap:10px;margin-top:22px}
+  .rv-skip{flex:none;background:none;border:1px solid var(--line);color:var(--muted);font-weight:600;font-size:14px;
+    padding:12px 16px;border-radius:11px;cursor:pointer}
+  .rv-submit{flex:1;border:none;color:#fff;font-weight:700;font-size:14px;padding:12px;border-radius:11px;cursor:pointer;
+    background:linear-gradient(135deg,var(--accent-2),var(--accent));box-shadow:0 6px 16px rgba(124,92,255,.3)}
+  .rv-submit:hover{filter:brightness(1.05)}
+  .rv-thanks{display:none;text-align:center;margin-top:16px;color:var(--green);font-weight:700;font-size:15px}
 
   @media(max-width:560px){
     .app{padding:16px 14px 60px}
@@ -261,7 +296,50 @@
     </div>
   </section>
 
-  <footer>Statement Analyzer · Rust + Axum engine · deterministic, no AI</footer>
+  <footer>
+    Statement Analyzer · Rust + Axum engine · deterministic, no AI<br/>
+    <a class="ghlink" href="https://github.com/tommy-skywalker/statement-analyzer" target="_blank" rel="noopener">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" style="vertical-align:-2px"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      Open source on GitHub — star it ⭐
+    </a>
+  </footer>
+</div>
+
+<!-- Review modal (shown after first analysis) -->
+<div class="modal-overlay" id="reviewOverlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="rvTitle">
+    <button class="modal-x" id="rvClose" aria-label="Close">✕</button>
+    <h3 id="rvTitle">Enjoying Statement Analyzer?</h3>
+    <p class="modal-sub">Your quick feedback helps shape this tool. Takes 10 seconds.</p>
+
+    <div class="rv-block">
+      <label class="rv-label">How would you rate it?</label>
+      <div class="stars" id="stars">
+        <span data-v="1">★</span><span data-v="2">★</span><span data-v="3">★</span><span data-v="4">★</span><span data-v="5">★</span>
+      </div>
+    </div>
+
+    <div class="rv-block">
+      <label class="rv-label">Would you pay for a tool like this?</label>
+      <div class="pay-opts" id="payOpts">
+        <button type="button" data-v="yes">💳 Yes</button>
+        <button type="button" data-v="maybe">🤔 Maybe</button>
+        <button type="button" data-v="no">🙅 No</button>
+      </div>
+      <input type="text" class="rv-input" id="rvPrice" placeholder="If yes/maybe — what's fair per month? (optional)" />
+    </div>
+
+    <div class="rv-block">
+      <label class="rv-label">Any thoughts or a short review? (optional)</label>
+      <textarea class="rv-input" id="rvReview" rows="3" placeholder="What did you like? What's missing?"></textarea>
+    </div>
+
+    <div class="rv-actions">
+      <button class="rv-skip" id="rvSkip">Maybe later</button>
+      <button class="rv-submit" id="rvSubmit">Submit feedback</button>
+    </div>
+    <div class="rv-thanks" id="rvThanks">🎉 Thank you! Your feedback was saved.</div>
+  </div>
 </div>
 
 <!-- API base config: served from /config.js (Rust binary = same origin; Vercel = your Railway URL) -->
@@ -272,6 +350,16 @@ let selectedFile=null, lastData=null;
 
 const API_BASE = (new URLSearchParams(location.search).get("api")
   || window.API_BASE || "").replace(/\/+$/,"");
+
+// Stable anonymous visitor id (for unique-user analytics).
+function visitorId(){
+  let v=localStorage.getItem("sa-visitor");
+  if(!v){
+    v=(crypto.randomUUID?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2)));
+    localStorage.setItem("sa-visitor",v);
+  }
+  return v;
+}
 
 /* ---------------- theme ---------------- */
 (function initTheme(){
@@ -318,11 +406,13 @@ async function analyze(){
   const fd=new FormData();
   fd.append("file",selectedFile);
   fd.append("query",$("query").value||"");
+  fd.append("visitor",visitorId());
   try{
     const res=await fetch(API_BASE+"/api/analyze",{method:"POST",body:fd});
     const data=await res.json();
     if(!res.ok||data.ok===false) throw new Error(data.error||(data.warnings&&data.warnings[0])||"Analysis failed");
     lastData=data; render(data);
+    maybeAskReview();
   }catch(err){showError(err.message||String(err));}
   finally{$("loading").classList.remove("show");$("analyzeBtn").disabled=false;}
 }
@@ -575,6 +665,46 @@ function download(blob,filename){
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),1500);
 }
+
+/* ---------------- review modal ---------------- */
+let rvStars=0, rvPay="";
+const overlay=$("reviewOverlay");
+
+function maybeAskReview(){
+  if(localStorage.getItem("sa-feedback-done")) return;
+  // ask after the first successful analysis, shortly after results render
+  setTimeout(()=>{ if(!localStorage.getItem("sa-feedback-done")) overlay.classList.add("show"); }, 1200);
+}
+function closeReview(){ overlay.classList.remove("show"); }
+
+$("stars").querySelectorAll("span").forEach(s=>{
+  s.addEventListener("click",()=>{ rvStars=+s.dataset.v; paintStars(rvStars); });
+  s.addEventListener("mouseenter",()=>paintStars(+s.dataset.v));
+});
+$("stars").addEventListener("mouseleave",()=>paintStars(rvStars));
+function paintStars(n){ $("stars").querySelectorAll("span").forEach(s=>s.classList.toggle("on",+s.dataset.v<=n)); }
+
+$("payOpts").querySelectorAll("button").forEach(b=>{
+  b.addEventListener("click",()=>{ rvPay=b.dataset.v; $("payOpts").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b)); });
+});
+
+$("rvClose").addEventListener("click",closeReview);
+$("rvSkip").addEventListener("click",()=>{ localStorage.setItem("sa-feedback-done","skipped"); closeReview(); });
+overlay.addEventListener("click",e=>{ if(e.target===overlay) closeReview(); });
+
+$("rvSubmit").addEventListener("click",async ()=>{
+  const payload={
+    visitor:visitorId(), stars:rvStars, would_pay:rvPay,
+    price:$("rvPrice").value||"", review:$("rvReview").value||""
+  };
+  if(!rvStars && !rvPay && !payload.review.trim()){ closeReview(); return; }
+  try{
+    await fetch(API_BASE+"/api/feedback",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+  }catch(e){/* best-effort */}
+  localStorage.setItem("sa-feedback-done","yes");
+  $("rvThanks").style.display="block";
+  setTimeout(closeReview,1400);
+});
 
 /* ---------------- helpers ---------------- */
 function sourceShort(s){ if(!s)return"—"; const parts=s.split("#"); const base=parts[0].split("::").pop().split("/").pop(); return parts[1]?base+" · "+parts[1]:base; }

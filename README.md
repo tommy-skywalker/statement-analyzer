@@ -209,8 +209,32 @@ Liveness probe → `{"status":"ok", ...}`.
 |---------|---------|----------------------------------|
 | `PORT`  | `8000`  | HTTP listen port                 |
 | `RUST_LOG` | `statement_analyzer=info` | log filter (e.g. `debug`) |
+| `ADMIN_TOKEN` | *(random, logged at startup)* | token for the `/admin` dashboard — **set this in production** |
+| `DB_PATH` | `data/analytics.db` | SQLite analytics file (use a persistent volume in prod) |
+| `IP_SALT` | *(random per start)* | salt for hashing IPs; set a fixed value to keep unique-IP counts stable across restarts |
+| `MAX_UPLOAD_MB` | `200` | max upload size in MB |
+| `RATE_ANALYZE_PER_MIN` | `20` | per-IP `/api/analyze` requests per minute |
+| `RATE_FEEDBACK_PER_MIN` | `5` | per-IP `/api/feedback` requests per minute |
 
-Upload limit is **1 GiB** (`MAX_UPLOAD` in `src/main.rs`).
+---
+
+## Security & admin
+
+- **Rate limiting** — fixed-window per-IP limiter on `/api/analyze` and `/api/feedback` (429 when exceeded).
+- **Security headers** — `Content-Security-Policy`, `X-Content-Type-Options: nosniff`,
+  `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy` on every response.
+- **Upload cap** — `MAX_UPLOAD_MB` (default 200 MB) rejects oversized bodies.
+- **Privacy** — raw IPs are never stored; only a salted SHA-256 hash (for unique-IP counts) plus
+  a coarse country/region. Visitors are identified by a random client-generated id (localStorage).
+- **Admin dashboard** at **`/admin`** — token-gated (`ADMIN_TOKEN`). Shows unique visitors, total
+  analyses, country/region breakdown, daily activity, average rating, "would you pay" results, and
+  recent reviews. The token is checked server-side on `GET /api/admin/stats` (`Authorization: Bearer <token>`).
+- **Feedback** — after a user's first analysis the UI asks for a star rating, a "would you pay for
+  this?" answer, and an optional review; results are stored and surfaced in the admin dashboard.
+
+> **Persistence on Railway:** the SQLite DB lives at `DB_PATH` (default `data/analytics.db`). Attach a
+> Railway **Volume** mounted at `/app/data` (or set `DB_PATH` to the volume path) so analytics survive
+> redeploys. Also set `ADMIN_TOKEN` and `IP_SALT` to fixed values in the service variables.
 
 ---
 
