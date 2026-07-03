@@ -156,6 +156,8 @@ async fn security_headers(req: axum::extract::Request, next: Next) -> Response {
     let set = |h: &mut HeaderMap, k: &'static str, v: &'static str| {
         h.insert(HeaderName::from_static(k), HeaderValue::from_static(v));
     };
+    // Always serve fresh HTML/assets so a reload never shows a stale UI.
+    set(h, "cache-control", "no-store, max-age=0, must-revalidate");
     set(h, "x-content-type-options", "nosniff");
     set(h, "x-frame-options", "DENY");
     set(h, "referrer-policy", "strict-origin-when-cross-origin");
