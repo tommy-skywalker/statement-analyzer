@@ -47,17 +47,24 @@ pub fn detect(text: &str) -> Currency {
         let mut score = 0u64;
         let mut how = "symbol";
 
-        // Symbol occurrences (skip plain "R"/"Fr" which are ambiguous letters).
+        // Unicode currency symbols (₦, $, £, €, …) are unambiguous and weighted
+        // heavily. Plain-letter symbols like "R"/"Fr"/"KSh" are skipped here.
         if def.symbol.chars().any(|c| !c.is_ascii_alphanumeric()) {
             let n = text.matches(def.symbol).count() as u64;
-            score += n * 5;
+            score += n * 12;
+            if n > 0 {
+                how = "symbol";
+            }
         }
-        // Code/alias word occurrences are very strong signals.
+        // Code/alias occurrences, but only as whole words (so "kes" inside
+        // another word can't falsely trigger Kenyan Shilling).
         for alias in def.aliases {
-            let n = lower.matches(alias).count() as u64;
+            let n = count_word(&lower, alias) as u64;
             if n > 0 {
                 score += n * 8;
-                how = "code/keyword";
+                if how != "symbol" {
+                    how = "code/keyword";
+                }
             }
         }
         if score > 0 {
@@ -88,4 +95,23 @@ pub fn detect(text: &str) -> Currency {
         confidence: 0.0,
         detected_by: "none".into(),
     }
+}
+
+/// Count whole-word (boundary-delimited) occurrences of `word` in `text`.
+fn count_word(text: &str, word: &str) -> usize {
+    let bytes = text.as_bytes();
+    let wlen = word.len();
+    let mut count = 0;
+    let mut start = 0;
+    while let Some(pos) = text[start..].find(word) {
+        let i = start + pos;
+        let before = if i == 0 { None } else { bytes.get(i - 1).copied() };
+        let after = bytes.get(i + wlen).copied();
+        let boundary = |b: Option<u8>| b.map_or(true, |c| !c.is_ascii_alphanumeric());
+        if boundary(before) && boundary(after) {
+            count += 1;
+        }
+        start = i + wlen;
+    }
+    count
 }

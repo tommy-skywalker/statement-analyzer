@@ -107,8 +107,11 @@ fn parse_spreadsheet(filename: &str, bytes: &[u8]) -> Result<Extracted> {
     let mut workbook = calamine::open_workbook_auto_from_rs(cursor)
         .context("could not open spreadsheet")?;
     let sheet_names = workbook.sheet_names().to_vec();
-    for name in sheet_names {
-        if let Ok(range) = workbook.worksheet_range(&name) {
+
+    // Collect each non-empty sheet's rows.
+    let mut sheets: Vec<(String, Vec<Vec<String>>)> = Vec::new();
+    for name in &sheet_names {
+        if let Ok(range) = workbook.worksheet_range(name) {
             let mut rows: Vec<Vec<String>> = Vec::with_capacity(range.height());
             for row in range.rows() {
                 let cells = row
@@ -128,10 +131,32 @@ fn parse_spreadsheet(filename: &str, bytes: &[u8]) -> Result<Extracted> {
                     .collect();
                 rows.push(cells);
             }
-            e.parts.push(name.clone());
-            e.blocks.push(Block::Table { source: format!("{filename}#{name}"), rows });
+            if rows.iter().any(|r| r.iter().any(|c| !c.trim().is_empty())) {
+                sheets.push((name.clone(), rows));
+            }
         }
     }
+
+    // Multiple sheets usually mean separate accounts (e.g. Wallet vs Savings).
+    // Merging them double-counts internal transfers and inflates totals, so we
+    // analyse only the primary (first, largest) sheet and note the rest.
+    if sheets.len() > 1 {
+        sheets.sort_by_key(|(_, r)| std::cmp::Reverse(r.len()));
+        let primary = sheets.remove(0);
+        let skipped: Vec<String> = sheets.iter().map(|(n, _)| n.clone()).collect();
+        e.warnings.push(format!(
+            "Workbook has {} sheets; analysing only \"{}\". Skipped (likely separate accounts): {}.",
+            skipped.len() + 1,
+            primary.0,
+            skipped.join(", ")
+        ));
+        e.parts.push(primary.0.clone());
+        e.blocks.push(Block::Table { source: format!("{filename}#{}", primary.0), rows: primary.1 });
+    } else if let Some((name, rows)) = sheets.into_iter().next() {
+        e.parts.push(name.clone());
+        e.blocks.push(Block::Table { source: format!("{filename}#{name}"), rows });
+    }
+
     if e.blocks.is_empty() {
         e.warnings.push("Spreadsheet contained no readable sheets".into());
     }

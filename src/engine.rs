@@ -5,9 +5,21 @@ use crate::extract::{self, Block};
 use crate::model::*;
 use crate::util::{self, Money};
 use chrono::{Datelike, NaiveDate};
+use once_cell::sync::Lazy;
+use regex::Regex;
 use std::time::Instant;
 
 const MATCHED_CAP: usize = 2000;
+
+// Statement-table row reconstruction (for wrapped PDF text like OPay):
+// each transaction starts with a date + time; amounts are `debit credit balance`
+// with `--` for empties and proper `.dd` decimals.
+static ROW_START: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\s+\d{1,2}:\d{2}:\d{2}").unwrap());
+static AMT_OR_DASH: Lazy<Regex> = Lazy::new(|| Regex::new(r"--|\d[\d,]*\.\d{2}").unwrap());
+static ROW_PREFIX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^\s*\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\s+\d{1,2}:\d{2}:\d{2}\s+\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\s*").unwrap()
+});
 
 /// A parsed statement: the expensive extraction result, cached so keyword
 /// changes can re-filter instantly without re-parsing the file.
@@ -38,6 +50,11 @@ pub fn parse(filename: &str, bytes: &[u8]) -> Result<ParsedDoc, String> {
     if txns.is_empty() {
         warnings.push(
             "No transactions could be parsed from this file. Check that it contains tabular or line-based statement data.".into(),
+        );
+    }
+    if raw_text.to_lowercase().matches("opening balance").count() >= 2 {
+        warnings.push(
+            "This statement contains more than one account; analysing only the first (primary) account.".into(),
         );
     }
     Ok(ParsedDoc {
@@ -404,6 +421,80 @@ fn direction_from_type(t: Option<&str>) -> Option<Direction> {
 // --------------------------- Text / PDF path ---------------------------
 
 fn text_to_txns(source: &str, lines: &[String], out: &mut Vec<Transaction>) {
+    // If this looks like a structured statement table with wrapped rows
+    // (each transaction begins with a date + time, e.g. OPay/PDF exports),
+    // reconstruct logical rows and parse the debit/credit/balance triple.
+    let mut joined = lines.join("\n");
+
+    // Multi-account statement (e.g. Wallet + Savings in one PDF): each account
+    // section begins with its own "Total Credit" summary header. Merging
+    // accounts double-counts internal transfers (and would even absorb the
+    // second account's summary totals into the last row), so keep only the
+    // first account by truncating at the start of the second section.
+    let low = joined.to_lowercase();
+    let mut marks = low.match_indices("total credit");
+    if marks.next().is_some() {
+        if let Some((mut second, _)) = marks.next() {
+            while second > 0 && !joined.is_char_boundary(second) {
+                second -= 1;
+            }
+            joined.truncate(second);
+        }
+    }
+
+    let starts: Vec<usize> = ROW_START.find_iter(&joined).map(|m| m.start()).collect();
+    if starts.len() >= 5 {
+        for w in 0..starts.len() {
+            let s = starts[w];
+            let e = if w + 1 < starts.len() { starts[w + 1] } else { joined.len() };
+            let row: String = joined[s..e].split_whitespace().collect::<Vec<_>>().join(" ");
+            parse_statement_row(source, w, &row, out);
+        }
+        return;
+    }
+    text_to_txns_lines(source, lines, out);
+}
+
+/// Parse one reconstructed statement row: `<datetime> <valuedate> <desc...>
+/// <debit> <credit> <balance> <channel> <ref>`. Amounts are `.dd` decimals or `--`.
+fn parse_statement_row(source: &str, idx: usize, row: &str, out: &mut Vec<Transaction>) {
+    let ms: Vec<regex::Match> = AMT_OR_DASH.find_iter(row).collect();
+    let n = ms.len();
+    if n < 3 {
+        return; // need debit, credit, balance
+    }
+    // Last three money-or-dash tokens are debit, credit, balance.
+    let d_tok = ms[n - 3].as_str();
+    let c_tok = ms[n - 2].as_str();
+    let cut = ms[n - 3].start();
+
+    let mag = |t: &str| -> Option<f64> {
+        if t == "--" { None } else { util::parse_amount(t).map(|m| m.magnitude()).filter(|x| *x > 0.0) }
+    };
+    let (amount, direction) = match (mag(d_tok), mag(c_tok)) {
+        (Some(d), _) => (d, Direction::Debit),
+        (None, Some(c)) => (c, Direction::Credit),
+        (None, None) => return,
+    };
+
+    let date = util::find_date_in_line(row);
+    let desc_raw = ROW_PREFIX.replace(&row[..cut], "");
+    let desc: String = desc_raw.chars().filter(|c| !"₦$£€¥₹₵₿₩".contains(*c)).collect();
+    let desc = clean(&desc);
+
+    out.push(Transaction {
+        date,
+        description: if desc.is_empty() { clean(row) } else { desc },
+        amount,
+        direction,
+        balance: mag(ms[n - 1].as_str()),
+        raw: clean(row),
+        source: source.to_string(),
+        line_no: idx,
+    });
+}
+
+fn text_to_txns_lines(source: &str, lines: &[String], out: &mut Vec<Transaction>) {
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
         if trimmed.len() < 6 {
