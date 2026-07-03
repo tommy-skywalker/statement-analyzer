@@ -270,6 +270,17 @@
 
   .file-btn{border-style:solid}
   .heronote{font-size:12px}
+
+  /* block-bar meters */
+  .meters{padding:14px 20px}
+  .meter{display:grid;grid-template-columns:170px 1fr 96px;gap:14px;align-items:center;padding:8px 0;font-size:12.5px;border-top:1px solid var(--line-2)}
+  .meter:first-child{border-top:none}
+  @media(max-width:620px){.meter{grid-template-columns:1fr auto;gap:4px 10px}.meter .mbar{grid-column:1/-1}}
+  .meter .ml{color:var(--muted);text-transform:uppercase;letter-spacing:.06em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .meter .mbar{font-size:15px;line-height:1;letter-spacing:.5px;white-space:nowrap;overflow:hidden}
+  .meter .mbar .on{color:var(--accent)}
+  .meter .mbar .off{color:var(--line)}
+  .meter .mv{font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -340,6 +351,11 @@
     </div>
 
     <div class="stats" id="stats"></div>
+
+    <div class="panel" id="metersPanel" style="margin-bottom:18px;display:none">
+      <div class="panel-head"><h3>Signal analysis</h3><span class="muted mono" id="metersNote" style="font-size:12px"></span></div>
+      <div class="meters" id="meters"></div>
+    </div>
 
     <div class="cols">
       <div class="left">
@@ -417,6 +433,13 @@
 <script>
 const $=(id)=>document.getElementById(id);
 const svic=(id)=>`<svg class="svic"><use href="#${id}"/></svg>`;
+const pct=(f)=>Math.round((f||0)*100)+"%";
+function meterRow(label,frac,valueText){
+  const N=24, filled=Math.max(0,Math.min(N,Math.round((frac||0)*N)));
+  let bars="";
+  for(let i=0;i<N;i++) bars+=`<span class="${i<filled?'on':'off'}">▍</span>`;
+  return `<div class="meter"><div class="ml">${label}</div><div class="mbar">${bars}</div><div class="mv">${valueText}</div></div>`;
+}
 let selectedFile=null, lastData=null;
 
 const API_BASE = (new URLSearchParams(location.search).get("api")
@@ -512,6 +535,19 @@ function render(d){
     ${statCard("purple",svic("i-swap"),"Net flow",d.summary.net_formatted,
        `<span class="delta ${netPos?'up':'down'}">${netPos?'▲ surplus':'▼ deficit'}</span> over ${d.summary.overall_duration?escapeHtml(d.summary.overall_duration.human):'··'}`,
        netPos?'green':'red')}`;
+
+  // Block-bar meters (terminal-style)
+  const flow=d.credit.total+d.debit.total;
+  const inFrac=flow>0?d.credit.total/flow:0;
+  const outFrac=flow>0?d.debit.total/flow:0;
+  const matchFrac=d.summary.total_transactions_scanned>0?d.summary.matched_transactions/d.summary.total_transactions_scanned:0;
+  $("metersPanel").style.display="block";
+  $("metersNote").textContent=`${fmtInt(d.summary.matched_transactions)}/${fmtInt(d.summary.total_transactions_scanned)} rows`;
+  $("meters").innerHTML=
+    meterRow("Money in share", inFrac, pct(inFrac))
+   +meterRow("Money out share", outFrac, pct(outFrac))
+   +meterRow("Match rate", matchFrac, `${fmtInt(d.summary.matched_transactions)}/${fmtInt(d.summary.total_transactions_scanned)}`)
+   +meterRow("Credit vs debit count", d.credit.count+d.debit.count>0?d.credit.count/(d.credit.count+d.debit.count):0, `${fmtInt(d.credit.count)}:${fmtInt(d.debit.count)}`);
 
   const tx=d.matched||[];
   $("txCount").textContent = tx.length ? `${tx.length}${d.matched_truncated?" (capped)":""} shown` : "";
