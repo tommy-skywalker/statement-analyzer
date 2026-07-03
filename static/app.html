@@ -6,24 +6,27 @@
 <title>Statement Analyzer — Ledger Intelligence</title>
 <style>
   :root{
-    --bg:#f4f5f7; --card:#ffffff; --soft:#fafafe; --ink:#15181e; --ink-2:#3a4049; --muted:#8b919c;
-    --faint:#aab0bb; --line:#ececf1; --line-2:#f2f3f6;
-    --accent:#7c5cff; --accent-2:#9b8cff; --accent-soft:#efeaff;
-    --green:#15a35b; --green-bg:#e6f7ee; --red:#e5484d; --red-bg:#fdebeb;
-    --amber:#bd7b16; --amber-bg:#fdf2e1; --blue:#3b6ef5; --blue-bg:#e9f0ff;
+    --bg:#fafafa; --card:#ffffff; --soft:#f4f4f4; --ink:#0a0a0a; --ink-2:#3a3a3a; --muted:#6b6b6b;
+    --faint:#9a9a9a; --line:#e6e6e6; --line-2:#efefef;
+    --accent:#0a0a0a; --accent-2:#0a0a0a; --accent-soft:#f0f0f0;
+    --green:#0a0a0a; --green-bg:#ededed; --red:#0a0a0a; --red-bg:#dcdcdc;
+    --amber:#0a0a0a; --amber-bg:#f0f0f0; --blue:#0a0a0a; --blue-bg:#ededed;
+    --black:#0a0a0a; --btn-bg:#0a0a0a; --btn-fg:#ffffff;
     --radius:16px; --radius-sm:11px;
-    --shadow:0 1px 2px rgba(16,24,40,.04), 0 10px 28px rgba(16,24,40,.06);
-    --shadow-sm:0 1px 2px rgba(16,24,40,.05);
+    --shadow:0 1px 2px rgba(0,0,0,.04), 0 12px 30px rgba(0,0,0,.07);
+    --shadow-sm:0 1px 2px rgba(0,0,0,.05);
   }
   [data-theme="dark"]{
-    --bg:#0d1117; --card:#161b22; --soft:#1b212b; --ink:#e6edf3; --ink-2:#c2ccd6; --muted:#8b949e;
-    --faint:#6e7781; --line:#232a35; --line-2:#1c232d;
-    --accent:#8b7cff; --accent-2:#a99bff; --accent-soft:#241f3d;
-    --green:#3fb950; --green-bg:#10271b; --red:#f06d6d; --red-bg:#2a1517;
-    --amber:#d8a23a; --amber-bg:#2a2010; --blue:#5b8bf0; --blue-bg:#10203a;
-    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px rgba(0,0,0,.45);
-    --shadow-sm:0 1px 2px rgba(0,0,0,.4);
+    --bg:#0a0a0a; --card:#141414; --soft:#1c1c1c; --ink:#f5f5f5; --ink-2:#c8c8c8; --muted:#9a9a9a;
+    --faint:#6a6a6a; --line:#2a2a2a; --line-2:#1e1e1e;
+    --accent:#ffffff; --accent-2:#ffffff; --accent-soft:#242424;
+    --green:#f5f5f5; --green-bg:#242424; --red:#f5f5f5; --red-bg:#303030;
+    --amber:#f5f5f5; --amber-bg:#242424; --blue:#f5f5f5; --blue-bg:#242424;
+    --black:#ffffff; --btn-bg:#ffffff; --btn-fg:#0a0a0a;
+    --shadow:0 1px 2px rgba(0,0,0,.5), 0 12px 30px rgba(0,0,0,.55);
+    --shadow-sm:0 1px 2px rgba(0,0,0,.5);
   }
+  .svic{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%;overflow-x:hidden}
   body{
@@ -39,7 +42,7 @@
   .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:30px}
   .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px}
   .brand .logo{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:#fff;
-    background:linear-gradient(135deg,var(--accent-2),var(--accent));font-size:15px}
+    background:var(--btn-bg);color:var(--btn-fg);font-size:15px}
   .topbar .right{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
   .btn-ghost{display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--line);
     color:var(--ink-2);font-size:13px;font-weight:600;padding:9px 14px;border-radius:10px;cursor:pointer;
@@ -73,7 +76,7 @@
   .search-input{flex:1;border:none;outline:none;font-size:15px;color:var(--ink);background:transparent;padding:0 8px;min-width:120px}
   .search-input::placeholder{color:var(--faint)}
   .go-btn{flex:none;border:none;cursor:pointer;color:#fff;font-weight:700;font-size:14px;padding:12px 22px;border-radius:11px;
-    background:linear-gradient(135deg,var(--accent-2),var(--accent));box-shadow:0 6px 16px rgba(124,92,255,.32);transition:.15s}
+    background:var(--btn-bg);color:var(--btn-fg);box-shadow:0 6px 16px rgba(124,92,255,.32);transition:.15s}
   .go-btn:hover{filter:brightness(1.05);transform:translateY(-1px)}
   .go-btn:disabled{opacity:.6;cursor:not-allowed;transform:none}
   .heronote{margin-top:11px;font-size:12.5px;color:var(--faint)}
@@ -99,7 +102,7 @@
   .cur-chip .sym{font-size:17px}
   .interp{display:inline-flex;align-items:center;gap:7px;margin-top:9px;background:var(--accent-soft);
     border:1px solid var(--accent-2);color:var(--accent);font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:999px}
-  .interp .pro{background:var(--accent);color:#fff;font-size:10px;font-weight:800;padding:2px 7px;border-radius:999px;letter-spacing:.03em}
+  .interp .pro{background:var(--btn-bg);color:var(--btn-fg);font-size:10px;font-weight:800;padding:2px 7px;border-radius:999px;letter-spacing:.03em}
 
   .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:18px}
   @media(max-width:860px){.stats{grid-template-columns:1fr}}
@@ -150,7 +153,7 @@
   .brow.total{border-top:1.5px solid var(--line);margin-top:4px;padding-top:13px}
   .brow.total .k{font-weight:700;color:var(--ink)} .brow.total .v{font-size:16px}
   .viewbtn{display:block;width:100%;text-align:center;margin-top:16px;border:none;cursor:pointer;color:#fff;font-weight:700;
-    font-size:14px;padding:13px;border-radius:12px;background:linear-gradient(135deg,var(--accent-2),var(--accent));box-shadow:0 6px 16px rgba(124,92,255,.3)}
+    font-size:14px;padding:13px;border-radius:12px;background:var(--btn-bg);color:var(--btn-fg);box-shadow:0 6px 16px rgba(124,92,255,.3)}
   .viewbtn:hover{filter:brightness(1.05)}
 
   .side{padding:18px 20px}
@@ -165,14 +168,14 @@
   .kv .cell .k{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);font-weight:700}
   .kv .cell .v{font-size:14px;font-weight:700;margin-top:3px;color:var(--ink);overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
 
-  .curcard{position:relative;overflow:hidden;border-radius:var(--radius);padding:20px;color:#fff;
-    background:linear-gradient(135deg,#8b7bff 0%,#6d4cff 55%,#5b34f0 100%);box-shadow:var(--shadow)}
-  .curcard::after{content:"";position:absolute;right:-40px;top:-40px;width:160px;height:160px;border-radius:50%;background:rgba(255,255,255,.12)}
+  .curcard{position:relative;overflow:hidden;border-radius:var(--radius);padding:20px;color:var(--bg);
+    background:var(--ink);box-shadow:var(--shadow)}
+  .curcard::after{content:"";position:absolute;right:-40px;top:-40px;width:160px;height:160px;border-radius:50%;background:rgba(128,128,128,.16)}
   .curcard .lab{font-size:12px;opacity:.85;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
   .curcard .big{font-size:28px;font-weight:800;margin:8px 0 2px;display:flex;align-items:center;gap:10px}
   .curcard .sub{font-size:13px;opacity:.9}
   .curcard .conf{position:relative;margin-top:16px;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;flex-wrap:wrap}
-  .curcard .badge{background:rgba(255,255,255,.18);padding:5px 12px;border-radius:999px;font-weight:700;font-size:12px}
+  .curcard .badge{background:rgba(128,128,128,.28);padding:5px 12px;border-radius:999px;font-weight:700;font-size:12px}
 
   .warns{margin-top:18px;display:flex;flex-direction:column;gap:8px}
   .warn{display:flex;gap:9px;background:var(--amber-bg);border:1px solid var(--amber);color:var(--amber);padding:10px 14px;border-radius:11px;font-size:13px}
@@ -194,9 +197,9 @@
   .rv-block{margin-top:16px}
   .rv-label{display:block;font-size:12.5px;font-weight:700;color:var(--ink-2);margin-bottom:8px}
   .stars{display:flex;gap:6px;font-size:30px;cursor:pointer;color:var(--line)}
-  .stars span{transition:.1s;color:#d7dbe2}
-  [data-theme="dark"] .stars span{color:#39414d}
-  .stars span.on{color:#f6b73c;text-shadow:0 0 12px rgba(246,183,60,.5)}
+  .stars span{transition:.1s;color:#d0d0d0}
+  [data-theme="dark"] .stars span{color:#3a3a3a}
+  .stars span.on{color:var(--ink)}
   .stars span:hover{transform:scale(1.12)}
   .pay-opts{display:flex;gap:8px;flex-wrap:wrap}
   .pay-opts button{flex:1;min-width:90px;background:var(--soft);border:1.5px solid var(--line);color:var(--ink-2);
@@ -210,7 +213,7 @@
   .rv-skip{flex:none;background:none;border:1px solid var(--line);color:var(--muted);font-weight:600;font-size:14px;
     padding:12px 16px;border-radius:11px;cursor:pointer}
   .rv-submit{flex:1;border:none;color:#fff;font-weight:700;font-size:14px;padding:12px;border-radius:11px;cursor:pointer;
-    background:linear-gradient(135deg,var(--accent-2),var(--accent));box-shadow:0 6px 16px rgba(124,92,255,.3)}
+    background:var(--btn-bg);color:var(--btn-fg);box-shadow:0 6px 16px rgba(124,92,255,.3)}
   .rv-submit:hover{filter:brightness(1.05)}
   .rv-thanks{display:none;text-align:center;margin-top:16px;color:var(--green);font-weight:700;font-size:15px}
 
@@ -225,22 +228,39 @@
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-logo" viewBox="0 0 24 24"><path d="M5 20V9M12 20V4M19 20v-7"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V3M8 7l4-4 4 4M4 14v5a2 2 0 002 2h12a2 2 0 002-2v-5"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4M5 21h14"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 10-2 6M20 5v6h-6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5L20 6"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14A8 8 0 019.5 3.5 8 8 0 1020.5 14z"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M7 17L17 7M9 7h8v8"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M7 7l10 10M17 9v8H9"/></symbol>
+  <symbol id="i-swap" viewBox="0 0 24 24"><path d="M4 9h13l-3-3M20 15H7l3 3"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z M14 3v4h4"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M4 10h16M4 15h16M10 4v16"/></symbol>
+  <symbol id="i-code" viewBox="0 0 24 24"><path d="M8 7l-4 5 4 5M16 7l4 5-4 5"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 4l1.5 4L18 9.5 13.5 11 12 15l-1.5-4L6 9.5 10.5 8z"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4l9 16H3z M12 10v4M12 17.5v.5"/></symbol>
+</svg>
 <div class="app">
   <div class="topbar">
-    <div class="brand"><span class="logo">▥</span> Statement Analyzer</div>
+    <a class="brand" href="/" style="color:inherit;text-decoration:none"><span class="logo"><svg class="svic" style="width:16px;height:16px;stroke-width:1.9"><use href="#i-logo"/></svg></span> Statement Analyzer</a>
     <div class="right">
-      <button class="btn-ghost icon-btn" id="themeBtn" title="Toggle dark mode" aria-label="Toggle dark mode">🌙</button>
+      <button class="btn-ghost icon-btn" id="themeBtn" title="Toggle dark mode" aria-label="Toggle dark mode"><svg class="svic"><use href="#i-moon"/></svg></button>
       <div class="menu-wrap">
-        <button class="btn-ghost" id="exportBtn" disabled>⤓ Export ▾</button>
+        <button class="btn-ghost" id="exportBtn" disabled><svg class="svic"><use href="#i-download"/></svg> Export</button>
         <div class="export-menu" id="exportMenu">
-          <button data-fmt="pdf"><span class="em-ic">📄</span> PDF document <span class="ext">.pdf</span></button>
-          <button data-fmt="xlsx"><span class=" em-ic">📊</span> Excel workbook <span class="ext">.xlsx</span></button>
-          <button data-fmt="csv"><span class=" em-ic">🧾</span> CSV spreadsheet <span class="ext">.csv</span></button>
-          <button data-fmt="txt"><span class=" em-ic">📃</span> Text report <span class="ext">.txt</span></button>
-          <button data-fmt="json"><span class=" em-ic">{ }</span> Raw JSON <span class="ext">.json</span></button>
+          <button data-fmt="pdf"><span class="em-ic"><svg class="svic"><use href="#i-file"/></svg></span> PDF document <span class="ext">.pdf</span></button>
+          <button data-fmt="xlsx"><span class="em-ic"><svg class="svic"><use href="#i-grid"/></svg></span> Excel workbook <span class="ext">.xlsx</span></button>
+          <button data-fmt="csv"><span class="em-ic"><svg class="svic"><use href="#i-grid"/></svg></span> CSV spreadsheet <span class="ext">.csv</span></button>
+          <button data-fmt="txt"><span class="em-ic"><svg class="svic"><use href="#i-file"/></svg></span> Text report <span class="ext">.txt</span></button>
+          <button data-fmt="json"><span class="em-ic"><svg class="svic"><use href="#i-code"/></svg></span> Raw JSON <span class="ext">.json</span></button>
         </div>
       </div>
-      <button class="btn-ghost" onclick="location.reload()">↻ New</button>
+      <button class="btn-ghost" onclick="location.reload()"><svg class="svic"><use href="#i-refresh"/></svg> New</button>
     </div>
   </div>
 
@@ -248,11 +268,11 @@
     <h1>Analyze any bank statement</h1>
     <p>Upload a statement in any format, then search a name or keyword to break down debits &amp; credits.</p>
     <div class="searchbar">
-      <button class="file-btn" id="fileBtn">📄 Choose file</button>
+      <button class="file-btn" id="fileBtn"><svg class="svic"><use href="#i-upload"/></svg> Choose file</button>
       <input class="search-input" id="query" placeholder='Ask in plain English — e.g. "how much did I spend on chicken last month"' autocomplete="off" />
       <button class="go-btn" id="analyzeBtn">Analyze</button>
     </div>
-    <div class="heronote" id="heronote">PDF · CSV · XLSX · TXT · ZIP/RAR/7z &nbsp;·&nbsp; 🧠 Smart search understands dates &amp; "spent on / received from" &nbsp;·&nbsp; blank = analyse everything</div>
+    <div class="heronote" id="heronote">PDF · CSV · XLSX · TXT · ZIP/RAR/7z &nbsp;·&nbsp; Smart search understands dates &amp; "spent on / received from" &nbsp;·&nbsp; blank = analyse everything</div>
     <input type="file" id="fileInput" hidden
       accept=".pdf,.csv,.tsv,.xlsx,.xls,.xlsm,.ods,.txt,.log,.zip,.rar,.7z,.tar,.gz" />
   </section>
@@ -323,9 +343,9 @@
     <div class="rv-block">
       <label class="rv-label">Would you pay for a tool like this?</label>
       <div class="pay-opts" id="payOpts">
-        <button type="button" data-v="yes">💳 Yes</button>
-        <button type="button" data-v="maybe">🤔 Maybe</button>
-        <button type="button" data-v="no">🙅 No</button>
+        <button type="button" data-v="yes">Yes</button>
+        <button type="button" data-v="maybe">Maybe</button>
+        <button type="button" data-v="no">No</button>
       </div>
       <input type="text" class="rv-input" id="rvPrice" placeholder="If yes/maybe — what's fair per month? (optional)" />
     </div>
@@ -339,7 +359,7 @@
       <button class="rv-skip" id="rvSkip">Maybe later</button>
       <button class="rv-submit" id="rvSubmit">Submit feedback</button>
     </div>
-    <div class="rv-thanks" id="rvThanks">🎉 Thank you! Your feedback was saved.</div>
+    <div class="rv-thanks" id="rvThanks">Thank you! Your feedback was saved.</div>
   </div>
 </div>
 
@@ -347,6 +367,7 @@
 <script src="config.js"></script>
 <script>
 const $=(id)=>document.getElementById(id);
+const svic=(id)=>`<svg class="svic"><use href="#${id}"/></svg>`;
 let selectedFile=null, lastData=null;
 
 const API_BASE = (new URLSearchParams(location.search).get("api")
@@ -370,7 +391,7 @@ function visitorId(){
 })();
 function setTheme(dark){
   document.documentElement.dataset.theme = dark ? "dark" : "light";
-  $("themeBtn").textContent = dark ? "☀️" : "🌙";
+  $("themeBtn").innerHTML = dark ? '<svg class="svic"><use href="#i-sun"/></svg>' : '<svg class="svic"><use href="#i-moon"/></svg>';
   localStorage.setItem("sa-theme", dark ? "dark" : "light");
 }
 $("themeBtn").addEventListener("click",()=>setTheme(document.documentElement.dataset.theme!=="dark"));
@@ -391,7 +412,7 @@ function setFile(f){
   selectedFile=f;
   const btn=$("fileBtn");
   btn.classList.add("ready");
-  btn.textContent="✓ "+truncate(f.name,26);
+  btn.innerHTML='<svg class="svic"><use href="#i-check"/></svg> '+escapeHtml(truncate(f.name,24));
   $("heronote").innerHTML='<b>'+escapeHtml(f.name)+'</b> · '+humanSize(f.size)+' ready — type a keyword and hit Analyze';
 }
 function humanSize(b){if(b>=1073741824)return(b/1073741824).toFixed(2)+" GB";if(b>=1048576)return(b/1048576).toFixed(2)+" MB";if(b>=1024)return(b/1024).toFixed(1)+" KB";return b+" B";}
@@ -432,14 +453,14 @@ function render(d){
   const itp=d.interpreted;
   if(itp && itp.smart){
     $("interp").style.display="inline-flex";
-    $("interp").innerHTML=`<span class="pro">SMART</span> 🧠 Understood: ${escapeHtml(itp.human)}`;
+    $("interp").innerHTML=`<span class="pro">SMART</span> ${svic("i-spark")} Understood: ${escapeHtml(itp.human)}`;
   } else { $("interp").style.display="none"; }
 
   const net=d.summary.net_amount, netPos=net>=0;
   $("stats").innerHTML = `
-    ${statCard("green","↑","Money in · Credit",d.credit.total_formatted,`${fmtInt(d.credit.count)} transactions`)}
-    ${statCard("red","↓","Money out · Debit",d.debit.total_formatted,`${fmtInt(d.debit.count)} transactions`)}
-    ${statCard("purple","≈","Net flow",d.summary.net_formatted,
+    ${statCard("green",svic("i-up"),"Money in · Credit",d.credit.total_formatted,`${fmtInt(d.credit.count)} transactions`)}
+    ${statCard("red",svic("i-down"),"Money out · Debit",d.debit.total_formatted,`${fmtInt(d.debit.count)} transactions`)}
+    ${statCard("purple",svic("i-swap"),"Net flow",d.summary.net_formatted,
        `<span class="delta ${netPos?'up':'down'}">${netPos?'▲ surplus':'▼ deficit'}</span> over ${d.summary.overall_duration?escapeHtml(d.summary.overall_duration.human):'—'}`,
        netPos?'green':'red')}`;
 
@@ -478,7 +499,7 @@ function render(d){
       <span class="badge">${Math.round((c.confidence||0)*100)}% confidence</span>
     </div>`;
 
-  $("warns").innerHTML = (d.warnings||[]).map(w=>`<div class="warn">⚠️ <span>${escapeHtml(w)}</span></div>`).join("");
+  $("warns").innerHTML = (d.warnings||[]).map(w=>`<div class="warn">${svic("i-alert")} <span>${escapeHtml(w)}</span></div>`).join("");
 
   $("results").classList.add("show");
   $("results").scrollIntoView({behavior:"smooth",block:"start"});
@@ -494,7 +515,7 @@ function statCard(color,icon,label,value,foot,valColor){
 function sideCard(s,kind,sym){
   const green=kind==='credit';
   return `<div class="shead">
-      <div class="t ${green?'green':'red'}">${green?'↑ Credit detail':'↓ Debit detail'}</div>
+      <div class="t ${green?'green':'red'}">${green?svic("i-up")+' Credit detail':svic("i-down")+' Debit detail'}</div>
       <span class="tag ${green?'green':'red'}">${fmtInt(s.count)} txns</span>
     </div>
     <div class="kv">
