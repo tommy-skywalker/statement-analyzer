@@ -32,6 +32,7 @@ use store::Store;
 use tower_http::cors::CorsLayer;
 
 const INDEX_HTML: &str = include_str!("../static/index.html");
+const APP_HTML: &str = include_str!("../static/app.html");
 const ADMIN_HTML: &str = include_str!("../static/admin.html");
 
 #[derive(Clone)]
@@ -91,6 +92,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(index))
+        .route("/app", get(app_page))
         .route("/admin", get(admin_page))
         .route("/config.js", get(config_js))
         .route("/health", get(health))
@@ -125,6 +127,10 @@ fn env_u32(key: &str, default: u32) -> u32 {
 
 async fn index() -> Html<&'static str> {
     Html(INDEX_HTML)
+}
+
+async fn app_page() -> Html<&'static str> {
+    Html(APP_HTML)
 }
 
 async fn admin_page() -> Html<&'static str> {
