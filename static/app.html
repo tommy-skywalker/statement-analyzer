@@ -110,7 +110,7 @@
   .stat .top{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:13px;font-weight:600;margin-bottom:13px}
   .stat .ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:15px;flex:none}
   .ic.green{background:var(--green-bg);color:var(--green)} .ic.red{background:var(--red-bg);color:var(--red)} .ic.purple{background:var(--accent-soft);color:var(--accent)}
-  .stat .big{font-size:clamp(22px,3.6vw,30px);font-weight:770;letter-spacing:-.02em;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+  .stat .big{font-size:clamp(18px,2.4vw,26px);font-weight:770;letter-spacing:-.02em;line-height:1.15;overflow-wrap:anywhere;word-break:break-word;font-variant-numeric:tabular-nums}
   .stat .big.green{color:var(--green)} .stat .big.red{color:var(--red)}
   .stat .foot{margin-top:6px;font-size:13px;color:var(--muted)}
   .delta{display:inline-flex;align-items:center;gap:4px;font-weight:700;font-size:12px;padding:2px 8px;border-radius:999px}
@@ -144,7 +144,7 @@
   .right{display:flex;flex-direction:column;gap:18px}
   .breakdown{padding:20px}
   .breakdown h3{font-size:15px;font-weight:700;margin-bottom:4px}
-  .breakdown .net{font-size:clamp(22px,4vw,30px);font-weight:780;letter-spacing:-.02em;margin:8px 0 2px;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+  .breakdown .net{font-size:clamp(18px,2.6vw,26px);font-weight:780;letter-spacing:-.02em;line-height:1.15;margin:8px 0 2px;overflow-wrap:anywhere;word-break:break-word;font-variant-numeric:tabular-nums}
   .breakdown .netlabel{font-size:13px;color:var(--muted);margin-bottom:16px}
   .brow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line-2);font-size:14px}
   .brow .k{color:var(--ink-2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -440,7 +440,7 @@ function meterRow(label,frac,valueText){
   for(let i=0;i<N;i++) bars+=`<span class="${i<filled?'on':'off'}">▍</span>`;
   return `<div class="meter"><div class="ml">${label}</div><div class="mbar">${bars}</div><div class="mv">${valueText}</div></div>`;
 }
-let selectedFile=null, lastData=null;
+let selectedFile=null, lastData=null, cacheId=null, cacheFile=null;
 
 const API_BASE = (new URLSearchParams(location.search).get("api")
   || window.API_BASE || "").replace(/\/+$/,"");
@@ -482,6 +482,7 @@ hero.addEventListener("drop",e=>{e.preventDefault(); if(e.dataTransfer.files[0])
 function setFile(f){
   if(!f)return;
   selectedFile=f;
+  cacheId=null; cacheFile=null; // new file needs a fresh parse
   const btn=$("fileBtn");
   btn.classList.add("ready");
   btn.innerHTML='<svg class="svic"><use href="#i-check"/></svg> '+escapeHtml(truncate(f.name,24));
@@ -491,22 +492,30 @@ function humanSize(b){if(b>=1073741824)return(b/1073741824).toFixed(2)+" GB";if(
 function fmtNum(n){return(n??0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});}
 function fmtInt(n){return(n??0).toLocaleString();}
 
+async function sendAnalyze(useCache){
+  const fd=new FormData();
+  fd.append("query",$("query").value||"");
+  if(useCache){ fd.append("cache_id",cacheId); }
+  else { fd.append("file",selectedFile); fd.append("visitor",visitorId()); }
+  const res=await fetch(API_BASE+"/api/analyze",{method:"POST",body:fd});
+  return res.json();
+}
 async function analyze(){
   if(!selectedFile){showError("Please choose a statement file first.");return;}
   hideError();
   $("results").classList.remove("show");
   $("loading").classList.add("show");
   $("analyzeBtn").disabled=true;
-  const fd=new FormData();
-  fd.append("file",selectedFile);
-  fd.append("query",$("query").value||"");
-  fd.append("visitor",visitorId());
+  let useCache = !!(cacheId && cacheFile===selectedFile); // keyword change -> instant re-filter
+  let fresh = !useCache;
   try{
-    const res=await fetch(API_BASE+"/api/analyze",{method:"POST",body:fd});
-    const data=await res.json();
-    if(!res.ok||data.ok===false) throw new Error(data.error||(data.warnings&&data.warnings[0])||"Analysis failed");
-    lastData=data; render(data);
-    maybeAskReview();
+    let data = await sendAnalyze(useCache);
+    if(data && data.cache_miss){ cacheId=null; fresh=true; data = await sendAnalyze(false); } // expired -> reparse
+    if(!data || data.ok===false) throw new Error((data&&data.error)||(data&&data.warnings&&data.warnings[0])||"Analysis failed");
+    lastData=data;
+    if(data.cache_id){ cacheId=data.cache_id; cacheFile=selectedFile; }
+    render(data);
+    if(fresh) maybeAskReview();
   }catch(err){showError(err.message||String(err));}
   finally{$("loading").classList.remove("show");$("analyzeBtn").disabled=false;}
 }
@@ -781,15 +790,17 @@ function download(blob,filename){
 }
 
 /* ---------------- review modal ---------------- */
-let rvStars=0, rvPay="";
+let rvStars=0, rvPay="", reviewScheduled=false;
 const overlay=$("reviewOverlay");
+const REVIEW_DELAY=30000; // 30s after the first analysis
 
 function maybeAskReview(){
-  if(localStorage.getItem("sa-feedback-done")) return;
-  // ask after the first successful analysis, shortly after results render
-  setTimeout(()=>{ if(!localStorage.getItem("sa-feedback-done")) overlay.classList.add("show"); }, 1200);
+  if(localStorage.getItem("sa-feedback-done") || reviewScheduled) return;
+  reviewScheduled=true; // schedule once per session only
+  setTimeout(()=>{ if(!localStorage.getItem("sa-feedback-done")) overlay.classList.add("show"); }, REVIEW_DELAY);
 }
 function closeReview(){ overlay.classList.remove("show"); }
+function dismissReview(){ localStorage.setItem("sa-feedback-done","dismissed"); closeReview(); }
 
 $("stars").querySelectorAll("span").forEach(s=>{
   s.addEventListener("click",()=>{ rvStars=+s.dataset.v; paintStars(rvStars); });
@@ -802,9 +813,9 @@ $("payOpts").querySelectorAll("button").forEach(b=>{
   b.addEventListener("click",()=>{ rvPay=b.dataset.v; $("payOpts").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b)); });
 });
 
-$("rvClose").addEventListener("click",closeReview);
+$("rvClose").addEventListener("click",dismissReview);
 $("rvSkip").addEventListener("click",()=>{ localStorage.setItem("sa-feedback-done","skipped"); closeReview(); });
-overlay.addEventListener("click",e=>{ if(e.target===overlay) closeReview(); });
+overlay.addEventListener("click",e=>{ if(e.target===overlay) dismissReview(); });
 
 $("rvSubmit").addEventListener("click",async ()=>{
   const payload={

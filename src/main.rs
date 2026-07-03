@@ -46,6 +46,31 @@ struct AppState {
     admin_token: Arc<String>,
     ip_salt: Arc<String>,
     geo_cache: Arc<Mutex<HashMap<String, geo::GeoInfo>>>,
+    analysis_cache: Arc<Mutex<AnalysisCache>>,
+}
+
+/// LRU-ish cache of parsed statements so keyword changes skip re-parsing.
+struct AnalysisCache {
+    map: HashMap<String, std::sync::Arc<engine::ParsedDoc>>,
+    order: std::collections::VecDeque<String>,
+    cap: usize,
+}
+impl AnalysisCache {
+    fn new(cap: usize) -> Self {
+        AnalysisCache { map: HashMap::new(), order: std::collections::VecDeque::new(), cap }
+    }
+    fn insert(&mut self, id: String, doc: std::sync::Arc<engine::ParsedDoc>) {
+        self.map.insert(id.clone(), doc);
+        self.order.push_back(id);
+        while self.order.len() > self.cap {
+            if let Some(old) = self.order.pop_front() {
+                self.map.remove(&old);
+            }
+        }
+    }
+    fn get(&self, id: &str) -> Option<std::sync::Arc<engine::ParsedDoc>> {
+        self.map.get(id).cloned()
+    }
 }
 
 #[tokio::main]
@@ -86,6 +111,7 @@ async fn main() {
         admin_token: Arc::new(admin_token),
         ip_salt: Arc::new(ip_salt),
         geo_cache: Arc::new(Mutex::new(HashMap::new())),
+        analysis_cache: Arc::new(Mutex::new(AnalysisCache::new(16))),
     };
 
     let max_mb = env_u32("MAX_UPLOAD_MB", 200) as usize;
@@ -185,10 +211,12 @@ async fn analyze(
         return too_many();
     }
 
+    let t0 = std::time::Instant::now();
     let mut filename: Option<String> = None;
     let mut file_bytes: Option<Vec<u8>> = None;
     let mut query = String::new();
     let mut visitor = String::new();
+    let mut cache_id = String::new();
 
     loop {
         let field = match multipart.next_field().await {
@@ -206,31 +234,77 @@ async fn analyze(
             }
             "query" | "name" | "keyword" => query = field.text().await.unwrap_or_default(),
             "visitor" => visitor = field.text().await.unwrap_or_default(),
+            "cache_id" => cache_id = field.text().await.unwrap_or_default(),
             _ => {
                 let _ = field.bytes().await;
             }
         }
     }
 
+    // ---- Fast path: re-filter a previously parsed doc (keyword change) ----
+    if file_bytes.as_ref().map(|b| b.is_empty()).unwrap_or(true) && !cache_id.is_empty() {
+        let cached = st.analysis_cache.lock().ok().and_then(|c| c.get(&cache_id));
+        match cached {
+            Some(doc) => {
+                let q = query.clone();
+                let mut result = match tokio::task::spawn_blocking(move || engine::analyze_parsed(&doc, &q)).await {
+                    Ok(r) => r,
+                    Err(e) => return bad_request(format!("Analysis task failed: {e}")),
+                };
+                result.cache_id = Some(cache_id);
+                return (StatusCode::OK, Json(serde_json::to_value(result).unwrap())).into_response();
+            }
+            // Cache expired: tell the client to resend the file.
+            None => {
+                return (
+                    StatusCode::OK,
+                    Json(json!({ "ok": false, "cache_miss": true, "error": "Session expired, re-analysing file." })),
+                )
+                    .into_response();
+            }
+        }
+    }
+
+    // ---- Slow path: parse a freshly uploaded file ----
     let bytes = match file_bytes {
         Some(b) if !b.is_empty() => b,
         _ => return bad_request("No file uploaded (expected a `file` field).".into()),
     };
     let filename = sanitize_name(&filename.unwrap_or_else(|| "upload.bin".to_string()));
     let visitor = sanitize_visitor(&visitor);
+    let size = bytes.len();
 
-    let result = match tokio::task::spawn_blocking({
+    let (mut result, doc_opt) = match tokio::task::spawn_blocking({
         let fname = filename.clone();
         let q = query.clone();
-        move || engine::run(&fname, &bytes, &q)
+        move || engine::parse_and_analyze(&fname, &bytes, &q)
     })
     .await
     {
-        Ok(r) => r,
+        Ok(pair) => pair,
         Err(e) => return bad_request(format!("Analysis task failed: {e}")),
     };
 
-    // Record analytics (best-effort, never blocks the response on failure).
+    // Cache the parsed doc so keyword changes re-filter instantly.
+    if let Some(doc) = doc_opt {
+        let id = security::random_token();
+        if let Ok(mut cache) = st.analysis_cache.lock() {
+            cache.insert(id.clone(), std::sync::Arc::new(doc));
+        }
+        result.cache_id = Some(id);
+    }
+
+    // Real elapsed = parse + analyze.
+    let ms = t0.elapsed().as_secs_f64() * 1000.0;
+    result.elapsed_ms = (ms * 100.0).round() / 100.0;
+    let secs = t0.elapsed().as_secs_f64();
+    result.throughput_mb_s = if secs > 0.0 {
+        (((size as f64 / (1024.0 * 1024.0)) / secs) * 100.0).round() / 100.0
+    } else {
+        0.0
+    };
+
+    // Record analytics only on a fresh parse (not on keyword re-filters).
     let geo = resolve_geo(&st, &headers, &ip).await;
     st.store.record_event(&store::EventIn {
         visitor,

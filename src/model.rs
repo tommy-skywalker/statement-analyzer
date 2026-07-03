@@ -91,6 +91,8 @@ pub struct Interpreted {
 pub struct AnalysisResult {
     pub ok: bool,
     pub query: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_id: Option<String>,
     pub interpreted: Interpreted,
     pub file: FileMeta,
     pub currency: crate::currency::Currency,

@@ -21,7 +21,8 @@ impl Money {
 
 static AMOUNT_TOKEN: Lazy<Regex> = Lazy::new(|| {
     // Matches a number that looks like money inside a larger string.
-    Regex::new(r"[-+]?\(?\s*[0-9][0-9.,\s]*[0-9]\)?").unwrap()
+    // No whitespace inside the token, so adjacent amounts stay separate.
+    Regex::new(r"[-+]?\(?[0-9][0-9.,]*[0-9]\)?").unwrap()
 });
 
 /// Parse a single cell/string that is expected to be (mostly) a number.
@@ -68,6 +69,18 @@ pub fn parse_amount(raw: &str) -> Option<Money> {
 
     let normalised = normalise_separators(&cleaned);
     let parsed: f64 = normalised.parse().ok()?;
+
+    // Reject values that are not realistic money: non-finite, or absurdly large
+    // (long account / reference / phone numbers get mis-read as huge amounts).
+    if !parsed.is_finite() || parsed.abs() >= 1e13 {
+        return None;
+    }
+    // A bare integer (no decimal separator) longer than 12 digits is almost
+    // certainly an identifier, not an amount.
+    let int_digits = normalised.split('.').next().unwrap_or("").trim_start_matches('-').len();
+    if !normalised.contains('.') && int_digits > 12 {
+        return None;
+    }
 
     let value = if negative_hint { -parsed.abs() } else { parsed };
     Some(Money {
@@ -118,11 +131,16 @@ fn normalise_separators(s: &str) -> String {
 
 /// Find all money-looking tokens inside a free-text line, left to right.
 pub fn find_amounts_in_line(line: &str) -> Vec<(Money, std::ops::Range<usize>)> {
-    let mut out = Vec::new();
+    let mut out: Vec<(Money, std::ops::Range<usize>, bool)> = Vec::new();
     for m in AMOUNT_TOKEN.find_iter(line) {
         let tok = m.as_str();
         let digits: String = tok.chars().filter(|c| c.is_ascii_digit()).collect();
         let has_sep = tok.contains('.') || tok.contains(',');
+        // Treat a trailing ".dd" (1-2 digits) as a real decimal amount.
+        let has_decimal = tok
+            .rsplit_once('.')
+            .map(|(_, frac)| (1..=2).contains(&frac.chars().filter(|c| c.is_ascii_digit()).count()))
+            .unwrap_or(false);
         // A bare integer must be >=5 digits to count (filters day/month/year
         // fragments like 05, 01, 2024). Anything with a decimal/thousands
         // separator is always treated as a real amount.
@@ -132,11 +150,21 @@ pub fn find_amounts_in_line(line: &str) -> Vec<(Money, std::ops::Range<usize>)> 
         if digits.len() == 4 && !has_sep {
             continue; // year
         }
+        // A bare integer with 10+ digits is an account / reference / phone
+        // number, not a transaction amount — skip it.
+        if !has_sep && digits.len() >= 10 {
+            continue;
+        }
         if let Some(money) = parse_amount(tok) {
-            out.push((money, m.range()));
+            out.push((money, m.range(), has_decimal));
         }
     }
-    out
+    // If any token is a proper decimal amount (e.g. 1,234.56), keep only those —
+    // this drops bare reference/id numbers that happen to sit on the line.
+    if out.iter().any(|(_, _, dec)| *dec) {
+        out.retain(|(_, _, dec)| *dec);
+    }
+    out.into_iter().map(|(m, r, _)| (m, r)).collect()
 }
 
 static DATE_FORMATS: &[&str] = &[

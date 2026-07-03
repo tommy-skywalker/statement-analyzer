@@ -9,17 +9,21 @@ use std::time::Instant;
 
 const MATCHED_CAP: usize = 2000;
 
-pub fn run(filename: &str, bytes: &[u8], query: &str) -> AnalysisResult {
-    let started = Instant::now();
-    let size = bytes.len();
+/// A parsed statement: the expensive extraction result, cached so keyword
+/// changes can re-filter instantly without re-parsing the file.
+pub struct ParsedDoc {
+    pub filename: String,
+    pub kind: String,
+    pub size_bytes: usize,
+    pub parts: Vec<String>,
+    pub currency: crate::currency::Currency,
+    pub txns: Vec<Transaction>,
+    pub warnings: Vec<String>,
+}
 
-    let extracted = match extract::extract(filename, bytes) {
-        Ok(e) => e,
-        Err(err) => {
-            return error_result(filename, query, size, format!("Extraction failed: {err}"));
-        }
-    };
-
+/// Extract + build transactions (the slow part). Cache the result.
+pub fn parse(filename: &str, bytes: &[u8]) -> Result<ParsedDoc, String> {
+    let extracted = extract::extract(filename, bytes).map_err(|e| format!("Extraction failed: {e}"))?;
     let raw_text = extracted.raw_text();
     let currency = crate::currency::detect(&raw_text);
 
@@ -31,13 +35,47 @@ pub fn run(filename: &str, bytes: &[u8], query: &str) -> AnalysisResult {
             Block::Text { source, lines } => text_to_txns(source, lines, &mut txns),
         }
     }
-
     if txns.is_empty() {
         warnings.push(
-            "No transactions could be parsed from this file. Check that it contains tabular or line-based statement data."
-                .into(),
+            "No transactions could be parsed from this file. Check that it contains tabular or line-based statement data.".into(),
         );
     }
+    Ok(ParsedDoc {
+        filename: filename.to_string(),
+        kind: extracted.kind,
+        size_bytes: bytes.len(),
+        parts: dedup(extracted.parts),
+        currency,
+        txns,
+        warnings,
+    })
+}
+
+pub fn run(filename: &str, bytes: &[u8], query: &str) -> AnalysisResult {
+    match parse(filename, bytes) {
+        Ok(doc) => analyze_parsed(&doc, query),
+        Err(msg) => error_result(filename, query, bytes.len(), msg),
+    }
+}
+
+/// Parse + analyze, also returning the parsed doc (for caching) on success.
+pub fn parse_and_analyze(filename: &str, bytes: &[u8], query: &str) -> (AnalysisResult, Option<ParsedDoc>) {
+    match parse(filename, bytes) {
+        Ok(doc) => {
+            let r = analyze_parsed(&doc, query);
+            (r, Some(doc))
+        }
+        Err(msg) => (error_result(filename, query, bytes.len(), msg), None),
+    }
+}
+
+/// Filter + compute stats over an already-parsed document (the fast part).
+pub fn analyze_parsed(doc: &ParsedDoc, query: &str) -> AnalysisResult {
+    let started = Instant::now();
+    let size = doc.size_bytes;
+    let currency = doc.currency.clone();
+    let txns = &doc.txns;
+    let mut warnings = doc.warnings.clone();
 
     // Smart natural-language query: keyword + optional date range + direction.
     let today = chrono::Utc::now().date_naive();
@@ -110,12 +148,13 @@ pub fn run(filename: &str, bytes: &[u8], query: &str) -> AnalysisResult {
         ok: true,
         query: query.to_string(),
         interpreted,
+        cache_id: None,
         file: FileMeta {
-            name: filename.to_string(),
-            kind: extracted.kind,
+            name: doc.filename.clone(),
+            kind: doc.kind.clone(),
             size_bytes: size,
             size_human: human_size(size),
-            parts: dedup(extracted.parts),
+            parts: doc.parts.clone(),
         },
         currency,
         summary: Summary {
@@ -523,6 +562,10 @@ fn round2(x: f64) -> f64 {
 }
 
 fn fmt_money(sym: &str, value: f64) -> String {
+    // Guard against non-finite / absurd values so we never render i64::MAX junk.
+    if !value.is_finite() || value.abs() >= 1e15 {
+        return format!("{sym}{value:.2}");
+    }
     let neg = value < 0.0;
     let v = value.abs();
     let whole = v.trunc() as i64;
@@ -584,6 +627,7 @@ fn error_result(filename: &str, query: &str, size: usize, msg: String) -> Analys
     AnalysisResult {
         ok: false,
         query: query.to_string(),
+        cache_id: None,
         interpreted: Interpreted {
             keyword: String::new(),
             direction: None,
