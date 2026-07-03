@@ -39,16 +39,40 @@ pub fn run(filename: &str, bytes: &[u8], query: &str) -> AnalysisResult {
         );
     }
 
-    // Filter by query (case-insensitive substring). Empty query => match all.
-    let q = query.trim().to_lowercase();
-    let match_all = q.is_empty();
-    if match_all {
+    // Smart natural-language query: keyword + optional date range + direction.
+    let today = chrono::Utc::now().date_naive();
+    let f = crate::nlquery::parse(query, today);
+    let kw = f.keyword.to_lowercase();
+    let no_filter = kw.is_empty() && f.date_from.is_none() && f.direction.is_none();
+    if no_filter {
         warnings.push("No search term provided — analysing ALL transactions.".into());
     }
     let matched: Vec<&Transaction> = txns
         .iter()
-        .filter(|t| match_all || t.description.to_lowercase().contains(&q) || t.raw.to_lowercase().contains(&q))
+        .filter(|t| {
+            let kw_ok = kw.is_empty()
+                || t.description.to_lowercase().contains(&kw)
+                || t.raw.to_lowercase().contains(&kw);
+            let date_ok = match (f.date_from, f.date_to) {
+                (Some(a), Some(b)) => t.date.map_or(false, |d| d >= a && d <= b),
+                _ => true,
+            };
+            let dir_ok = f.direction.map_or(true, |dir| t.direction == dir);
+            kw_ok && date_ok && dir_ok
+        })
         .collect();
+    let interpreted = Interpreted {
+        keyword: f.keyword.clone(),
+        direction: f.direction.map(|d| match d {
+            Direction::Debit => "debit".to_string(),
+            Direction::Credit => "credit".to_string(),
+            Direction::Unknown => "unknown".to_string(),
+        }),
+        date_from: f.date_from.map(|d| d.to_string()),
+        date_to: f.date_to.map(|d| d.to_string()),
+        human: f.human.clone(),
+        smart: f.smart,
+    };
 
     let debits: Vec<&&Transaction> = matched.iter().filter(|t| t.direction == Direction::Debit).collect();
     let credits: Vec<&&Transaction> = matched.iter().filter(|t| t.direction == Direction::Credit).collect();
@@ -85,6 +109,7 @@ pub fn run(filename: &str, bytes: &[u8], query: &str) -> AnalysisResult {
     AnalysisResult {
         ok: true,
         query: query.to_string(),
+        interpreted,
         file: FileMeta {
             name: filename.to_string(),
             kind: extracted.kind,
@@ -559,6 +584,14 @@ fn error_result(filename: &str, query: &str, size: usize, msg: String) -> Analys
     AnalysisResult {
         ok: false,
         query: query.to_string(),
+        interpreted: Interpreted {
+            keyword: String::new(),
+            direction: None,
+            date_from: None,
+            date_to: None,
+            human: String::new(),
+            smart: false,
+        },
         file: FileMeta {
             name: filename.to_string(),
             kind: "error".into(),

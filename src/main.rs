@@ -7,6 +7,7 @@ mod engine;
 mod extract;
 mod geo;
 mod model;
+mod nlquery;
 mod parsers;
 mod security;
 mod store;

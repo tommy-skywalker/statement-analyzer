@@ -97,6 +97,9 @@
   .cur-chip{display:flex;align-items:center;gap:9px;background:var(--accent-soft);border:1px solid var(--accent-2);
     color:var(--accent);font-weight:700;font-size:14px;padding:9px 15px;border-radius:12px;white-space:nowrap}
   .cur-chip .sym{font-size:17px}
+  .interp{display:inline-flex;align-items:center;gap:7px;margin-top:9px;background:var(--accent-soft);
+    border:1px solid var(--accent-2);color:var(--accent);font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:999px}
+  .interp .pro{background:var(--accent);color:#fff;font-size:10px;font-weight:800;padding:2px 7px;border-radius:999px;letter-spacing:.03em}
 
   .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:18px}
   @media(max-width:860px){.stats{grid-template-columns:1fr}}
@@ -246,10 +249,10 @@
     <p>Upload a statement in any format, then search a name or keyword to break down debits &amp; credits.</p>
     <div class="searchbar">
       <button class="file-btn" id="fileBtn">📄 Choose file</button>
-      <input class="search-input" id="query" placeholder="Search a name or keyword — e.g. JOHN DOE, SALARY, UBER" autocomplete="off" />
+      <input class="search-input" id="query" placeholder='Ask in plain English — e.g. "how much did I spend on chicken last month"' autocomplete="off" />
       <button class="go-btn" id="analyzeBtn">Analyze</button>
     </div>
-    <div class="heronote" id="heronote">PDF · CSV · XLSX · TXT · ZIP/RAR/7z · up to 1&nbsp;GB &nbsp;·&nbsp; leave keyword blank to analyse everything</div>
+    <div class="heronote" id="heronote">PDF · CSV · XLSX · TXT · ZIP/RAR/7z &nbsp;·&nbsp; 🧠 Smart search understands dates &amp; "spent on / received from" &nbsp;·&nbsp; blank = analyse everything</div>
     <input type="file" id="fileInput" hidden
       accept=".pdf,.csv,.tsv,.xlsx,.xls,.xlsm,.ods,.txt,.log,.zip,.rar,.7z,.tar,.gz" />
   </section>
@@ -262,6 +265,7 @@
       <div style="min-width:0">
         <h2 id="resTitle">Analysis results</h2>
         <div class="sub" id="resSub"></div>
+        <div class="interp" id="interp" style="display:none"></div>
       </div>
       <div class="cur-chip" id="curChip"></div>
     </div>
@@ -426,6 +430,13 @@ function render(d){
     + `scanned ${fmtInt(d.summary.total_transactions_scanned)} · matched <b>${fmtInt(d.summary.matched_transactions)}</b> · `
     + `${d.elapsed_ms} ms · ${d.throughput_mb_s} MB/s`;
   $("curChip").innerHTML = `<span class="sym">${escapeHtml(sym)}</span> ${escapeHtml(c.code)}`;
+
+  // Smart-search interpretation chip
+  const itp=d.interpreted;
+  if(itp && itp.smart){
+    $("interp").style.display="inline-flex";
+    $("interp").innerHTML=`<span class="pro">SMART</span> 🧠 Understood: ${escapeHtml(itp.human)}`;
+  } else { $("interp").style.display="none"; }
 
   const net=d.summary.net_amount, netPos=net>=0;
   $("stats").innerHTML = `

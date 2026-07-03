@@ -78,9 +78,20 @@ pub struct Summary {
 }
 
 #[derive(Debug, Serialize)]
+pub struct Interpreted {
+    pub keyword: String,
+    pub direction: Option<String>,
+    pub date_from: Option<String>,
+    pub date_to: Option<String>,
+    pub human: String,
+    pub smart: bool,
+}
+
+#[derive(Debug, Serialize)]
 pub struct AnalysisResult {
     pub ok: bool,
     pub query: String,
+    pub interpreted: Interpreted,
     pub file: FileMeta,
     pub currency: crate::currency::Currency,
     pub summary: Summary,
