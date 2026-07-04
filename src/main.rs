@@ -121,6 +121,8 @@ async fn main() {
         .route("/app", get(app_page))
         .route("/admin", get(admin_page))
         .route("/config.js", get(config_js))
+        .route("/favicon.svg", get(favicon))
+        .route("/og.png", get(og_image))
         .route("/health", get(health))
         .route("/api/analyze", post(analyze))
         .route("/api/feedback", post(feedback))
@@ -157,6 +159,20 @@ async fn index() -> Html<&'static str> {
 
 async fn app_page() -> Html<&'static str> {
     Html(APP_HTML)
+}
+
+async fn favicon() -> impl IntoResponse {
+    (
+        [(axum::http::header::CONTENT_TYPE, "image/svg+xml")],
+        include_str!("../static/favicon.svg"),
+    )
+}
+
+async fn og_image() -> impl IntoResponse {
+    (
+        [(axum::http::header::CONTENT_TYPE, "image/png")],
+        include_bytes!("../static/og.png").as_slice(),
+    )
 }
 
 async fn admin_page() -> Html<&'static str> {

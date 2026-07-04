@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 500" width="1500" height="500" font-family="Menlo, Consolas, monospace">
+  <!-- X / Twitter header 1500x500 -->
+  <rect width="1500" height="500" fill="#08090a"/>
+  <path d="M50 80 V50 H80" stroke="#4ade80" stroke-width="4" fill="none"/>
+  <path d="M1450 420 V450 H1420" stroke="#4ade80" stroke-width="4" fill="none"/>
+
+  <!-- faint grid of ticks -->
+  <g fill="#14181a">
+    <rect x="1180" y="90"  width="260" height="10"/>
+    <rect x="1180" y="120" width="200" height="10"/>
+    <rect x="1180" y="150" width="230" height="10"/>
+    <rect x="1180" y="180" width="170" height="10"/>
+  </g>
+
+  <!-- mark -->
+  <rect x="80" y="150" width="150" height="150" rx="34" fill="#ffffff"/>
+  <path d="M121 258 V222" stroke="#0a0a0a" stroke-width="12" stroke-linecap="round"/>
+  <path d="M155 258 V189" stroke="#0a0a0a" stroke-width="12" stroke-linecap="round"/>
+  <path d="M189 258 V213" stroke="#16a34a" stroke-width="12" stroke-linecap="round"/>
+
+  <!-- name + tagline -->
+  <text x="280" y="222" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="66" font-weight="800" letter-spacing="-1.5" fill="#ffffff">Statement Analyzer</text>
+  <text x="284" y="278" font-size="27" fill="#98a2ac">&gt; Any statement. Any question. <tspan fill="#4ade80">Instant answers.</tspan></text>
+
+  <!-- meter strip -->
+  <g font-size="18">
+    <text x="284" y="352" fill="#6a747d">MATCH RATE</text>
+    <g fill="#4ade80">
+      <rect x="440" y="336" width="8" height="20"/><rect x="454" y="336" width="8" height="20"/><rect x="468" y="336" width="8" height="20"/>
+      <rect x="482" y="336" width="8" height="20"/><rect x="496" y="336" width="8" height="20"/><rect x="510" y="336" width="8" height="20"/>
+      <rect x="524" y="336" width="8" height="20"/><rect x="538" y="336" width="8" height="20"/><rect x="552" y="336" width="8" height="20"/>
+    </g>
+    <g fill="#222a2f"><rect x="566" y="336" width="8" height="20"/><rect x="580" y="336" width="8" height="20"/></g>
+    <text x="606" y="352" fill="#c9d1d9" font-weight="bold">9,941/9,941 rows</text>
+  </g>
+
+  <text x="284" y="420" font-size="24" fill="#4ade80" font-weight="bold">YOURSTATEMENTANALYZER.COM</text>
+</svg>

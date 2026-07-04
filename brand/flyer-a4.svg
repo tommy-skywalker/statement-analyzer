@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 1754" width="1240" height="1754" font-family="Menlo, Consolas, monospace">
+  <!-- A4 flyer (print at 300dpi: export 2480x3508) -->
+  <rect width="1240" height="1754" fill="#08090a"/>
+  <path d="M60 110 V60 H110" stroke="#4ade80" stroke-width="5" fill="none"/>
+  <path d="M1180 1644 V1694 H1130" stroke="#4ade80" stroke-width="5" fill="none"/>
+
+  <!-- status bar -->
+  <rect x="60" y="60" width="1120" height="54" fill="#0d1011" stroke="#222a2f"/>
+  <text x="84" y="95" font-size="22" fill="#c9d1d9" font-weight="bold">STATEMENT ANALYZER <tspan fill="#4ade80">// ANALYSIS TERMINAL</tspan></text>
+  <rect x="1028" y="72" width="128" height="30" fill="#0e2317" stroke="#4ade80"/>
+  <text x="1048" y="94" font-size="18" fill="#4ade80" font-weight="bold">ONLINE</text>
+
+  <!-- mark -->
+  <rect x="60" y="180" width="130" height="130" rx="30" fill="#ffffff"/>
+  <path d="M96 274 V244" stroke="#0a0a0a" stroke-width="11" stroke-linecap="round"/>
+  <path d="M125 274 V214" stroke="#0a0a0a" stroke-width="11" stroke-linecap="round"/>
+  <path d="M154 274 V235" stroke="#16a34a" stroke-width="11" stroke-linecap="round"/>
+
+  <!-- headline -->
+  <text x="60" y="430" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="92" font-weight="800" letter-spacing="-3" fill="#ffffff">Understand any</text>
+  <text x="60" y="525" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="92" font-weight="800" letter-spacing="-3" fill="#ffffff">bank statement</text>
+  <text x="60" y="620" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="92" font-weight="800" letter-spacing="-3" fill="#4ade80">in seconds.</text>
+
+  <text x="60" y="700" font-size="27" fill="#98a2ac">Upload a statement. Ask in plain English. Get every answer.</text>
+
+  <!-- terminal demo card -->
+  <rect x="60" y="760" width="1120" height="330" fill="#0d1011" stroke="#222a2f"/>
+  <path d="M60 770 V760 H70" stroke="#4ade80" stroke-width="3" fill="none"/>
+  <path d="M1180 1080 V1090 H1170" stroke="#4ade80" stroke-width="3" fill="none"/>
+  <text x="96" y="828" font-size="27" fill="#98a2ac">&gt; "everything sent to <tspan fill="#ffffff" font-weight="bold">John Doe</tspan> this year"</text>
+  <g font-size="24">
+    <text x="96" y="900" fill="#6a747d">MONEY OUT</text><text x="1144" y="900" fill="#f0574f" font-weight="bold" text-anchor="end">-₦1,240,500.00</text>
+    <text x="96" y="956" fill="#6a747d">TRANSACTIONS</text><text x="1144" y="956" fill="#c9d1d9" font-weight="bold" text-anchor="end">47</text>
+    <text x="96" y="1012" fill="#6a747d">PERIOD</text><text x="1144" y="1012" fill="#c9d1d9" font-weight="bold" text-anchor="end">Jan – Jun 2026 · 6 months</text>
+  </g>
+  <line x1="96" y1="920" x2="1144" y2="920" stroke="#222a2f"/>
+  <line x1="96" y1="976" x2="1144" y2="976" stroke="#222a2f"/>
+
+  <!-- three steps -->
+  <g font-size="24">
+    <rect x="60"  y="1140" width="356" height="170" fill="#0d1011" stroke="#222a2f"/>
+    <text x="88" y="1196" font-size="40" font-weight="800" fill="#4ade80">1</text>
+    <text x="88" y="1240" fill="#ffffff" font-weight="bold">UPLOAD</text>
+    <text x="88" y="1276" fill="#6a747d" font-size="20">PDF, CSV, Excel, archives</text>
+
+    <rect x="442" y="1140" width="356" height="170" fill="#0d1011" stroke="#222a2f"/>
+    <text x="470" y="1196" font-size="40" font-weight="800" fill="#4ade80">2</text>
+    <text x="470" y="1240" fill="#ffffff" font-weight="bold">ASK</text>
+    <text x="470" y="1276" fill="#6a747d" font-size="20">names, keywords, plain English</text>
+
+    <rect x="824" y="1140" width="356" height="170" fill="#0d1011" stroke="#222a2f"/>
+    <text x="852" y="1196" font-size="40" font-weight="800" fill="#4ade80">3</text>
+    <text x="852" y="1240" fill="#ffffff" font-weight="bold">KNOW</text>
+    <text x="852" y="1276" fill="#6a747d" font-size="20">totals, dates, exports</text>
+  </g>
+
+  <!-- audience strip -->
+  <text x="60" y="1390" font-size="22" fill="#6a747d" letter-spacing="2">FOR LENDERS · ACCOUNTANTS · AUDITORS · LANDLORDS · SMEs · LEGAL · YOU</text>
+
+  <!-- footer -->
+  <rect x="60" y="1450" width="1120" height="150" fill="#ffffff"/>
+  <text x="620" y="1520" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="46" font-weight="800" letter-spacing="-1" fill="#0a0a0a">yourstatementanalyzer.com</text>
+  <text x="620" y="1566" text-anchor="middle" font-size="22" fill="#6b6b6b">Free to try · No signup · Business: babatomiwasokeyo@gmail.com</text>
+  <text x="60" y="1680" font-size="18" fill="#4c555d">FAST · PRIVATE · DETERMINISTIC · NO AI GUESSWORK</text>
+</svg>
