@@ -151,6 +151,26 @@
   .final h2{font-size:clamp(26px,3.6vw,42px);font-weight:800}
   .final p{color:var(--muted);font-size:16px;margin:14px auto 26px;max-width:520px}
 
+  /* motion */
+  .rv{opacity:0;transform:translateY(18px);transition:opacity .6s ease,transform .6s ease}
+  .rv.in{opacity:1;transform:none}
+  .rv.d1{transition-delay:.08s}.rv.d2{transition-delay:.16s}.rv.d3{transition-delay:.24s}
+  @media(prefers-reduced-motion:reduce){.rv{opacity:1;transform:none;transition:none}}
+  .type-caret::after{content:"|";margin-left:1px;animation:blink 1s steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+  .chart .line{stroke-dasharray:900;stroke-dashoffset:900;transition:stroke-dashoffset 1.6s ease .2s}
+  .chart.in .line{stroke-dashoffset:0}
+
+  /* query marquee */
+  .marquee{border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--soft);
+    overflow:hidden;padding:14px 0;white-space:nowrap}
+  .marquee .track{display:inline-block;animation:scroll 36s linear infinite}
+  .marquee:hover .track{animation-play-state:paused}
+  @keyframes scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+  .mq{display:inline-flex;align-items:center;gap:8px;margin:0 26px;font-size:13.5px;color:var(--ink-2);font-weight:550}
+  .mq .ic{width:15px;height:15px;color:var(--muted)}
+  .mq b{color:var(--ink)}
+
   /* footer */
   footer.ft{border-top:1px solid var(--line);padding:46px 0 30px;margin-top:72px}
   .ft-grid{display:flex;justify-content:space-between;gap:30px;flex-wrap:wrap}
@@ -224,10 +244,10 @@
         <div class="m-title"><svg class="ic"><use href="#i-chart"/></svg> Analysis</div>
         <span class="m-code">NGN</span>
       </div>
-      <div class="m-q"><svg class="ic"><use href="#i-spark"/></svg> <span><b>"How much did I spend on Chicken Republic last month?"</b></span></div>
+      <div class="m-q"><svg class="ic"><use href="#i-spark"/></svg> <span><b id="typeQ" class="type-caret"></b></span></div>
       <div class="mrow">
         <div class="mcard"><div class="l"><svg class="ic"><use href="#i-up"/></svg> Money in</div><div class="v">₦0</div><div class="s">0 transactions</div></div>
-        <div class="mcard out"><div class="l"><svg class="ic"><use href="#i-down"/></svg> Money out</div><div class="v">₦193,558</div><div class="s">16 transactions</div></div>
+        <div class="mcard out"><div class="l"><svg class="ic"><use href="#i-down"/></svg> Money out</div><div class="v" id="countOut">₦0</div><div class="s">16 transactions</div></div>
       </div>
       <div class="mline"><span>Transfer to Food Concepts PLC</span><b>−₦12,000</b></div>
       <div class="mline"><span>POS · Chicken Republic VI</span><b>−₦7,000</b></div>
@@ -235,6 +255,20 @@
     </div>
   </div>
 </section>
+
+<!-- QUERY MARQUEE -->
+<div class="marquee" aria-hidden="true">
+  <div class="track" id="mqTrack">
+    <span class="mq"><svg class="ic"><use href="#i-search"/></svg> "how much did I spend on <b>chicken</b> last month"</span>
+    <span class="mq"><svg class="ic"><use href="#i-search"/></svg> "total <b>salary</b> credits last 6 months"</span>
+    <span class="mq"><svg class="ic"><use href="#i-search"/></svg> "everything sent to <b>John Doe</b>"</span>
+    <span class="mq"><svg class="ic"><use href="#i-search"/></svg> "<b>rent</b> payments this year"</span>
+    <span class="mq"><svg class="ic"><use href="#i-search"/></svg> "settlements from <b>Paystack</b> last month"</span>
+    <span class="mq"><svg class="ic"><use href="#i-search"/></svg> "money out to <b>account 0123</b>"</span>
+    <span class="mq"><svg class="ic"><use href="#i-search"/></svg> "<b>betting</b> this year"</span>
+    <span class="mq"><svg class="ic"><use href="#i-search"/></svg> "received from <b>OPay</b> in May"</span>
+  </div>
+</div>
 
 <!-- FEATURES -->
 <section class="section" id="features">
@@ -276,7 +310,7 @@
         <svg class="chart" viewBox="0 0 700 150" preserveAspectRatio="none">
           <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0a0a0a" stop-opacity="0.14"/><stop offset="1" stop-color="#0a0a0a" stop-opacity="0"/></linearGradient></defs>
           <path d="M0,120 L100,110 L200,118 L300,86 L400,92 L500,54 L600,60 L700,26 L700,150 L0,150 Z" fill="url(#g)"/>
-          <path d="M0,120 L100,110 L200,118 L300,86 L400,92 L500,54 L600,60 L700,26" fill="none" stroke="#0a0a0a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path class="line" d="M0,120 L100,110 L200,118 L300,86 L400,92 L500,54 L600,60 L700,26" fill="none" stroke="#0a0a0a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       </div>
     </div>
@@ -361,5 +395,55 @@
   </div>
 </footer>
 
+<script>
+// duplicate marquee content for a seamless loop
+(function(){ const t=document.getElementById('mqTrack'); t.innerHTML+=t.innerHTML; })();
+
+// typing loop in the hero mock
+(function(){
+  const el=document.getElementById('typeQ');
+  const queries=[
+    '"How much did I spend on Chicken Republic last month?"',
+    '"Everything sent to John Doe this year"',
+    '"Total salary credits last 6 months"',
+    '"Betting this year"'
+  ];
+  let qi=0;
+  async function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+  async function loop(){
+    for(;;){
+      const q=queries[qi]; qi=(qi+1)%queries.length;
+      el.textContent="";
+      for(const ch of q){ el.textContent+=ch; await sleep(34+Math.random()*36); }
+      await sleep(2600);
+      for(let n=el.textContent.length;n>0;n-=3){ el.textContent=el.textContent.slice(0,n); await sleep(11); }
+    }
+  }
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches){ el.textContent=queries[0]; el.classList.remove('type-caret'); }
+  else loop();
+})();
+
+// count-up for the money-out figure
+(function(){
+  const el=document.getElementById('countOut'); if(!el)return;
+  const target=193558, dur=1400, t0=performance.now();
+  function tick(t){
+    const p=Math.min(1,(t-t0)/dur), ease=1-Math.pow(1-p,3);
+    el.textContent="₦"+Math.round(target*ease).toLocaleString();
+    if(p<1)requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+})();
+
+// scroll-reveal + chart draw
+(function(){
+  const items=[...document.querySelectorAll('.feat,.uc,.why-card,.step,.sec-head,.ent,.final')];
+  items.forEach((n,i)=>n.classList.add('rv','d'+(i%3)));
+  const io=new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target);} }),{threshold:.12});
+  items.forEach(n=>io.observe(n));
+  const chart=document.querySelector('.chart');
+  if(chart){ const co=new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting){chart.classList.add('in'); co.disconnect();} }),{threshold:.4}); co.observe(chart); }
+})();
+</script>
 </body>
 </html>

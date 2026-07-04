@@ -839,6 +839,80 @@ function pad(s,n){s=String(s); return s.length>=n? s.slice(0,n-1)+' ' : s+' '.re
 function truncate(s,n){s=String(s);return s.length<=n?s:s.slice(0,n-1)+"…";}
 function showError(m){const e=$("error");e.textContent="✕ "+m;e.classList.add("show");}
 function hideError(){$("error").classList.remove("show");}
+
+/* ---------------- DEMO MODE (?demo=1) ----------------
+   Auto-loads a realistic sample statement, human-types queries and runs
+   analyses in a loop. Screen-record this for social videos. */
+(function(){
+  if(new URLSearchParams(location.search).get("demo")!=="1") return;
+  localStorage.setItem("sa-feedback-done","demo"); // never show the modal on camera
+  const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
+
+  function demoCsv(){
+    const rows=["Date,Description,Debit,Credit,Balance"];
+    const debits=[
+      ["Transfer to FOOD CONCEPTS PLC - SURULERE CHICKEN REPUBLIC | MONIE POINT",8000,26000],
+      ["POS Chicken Republic LAG, YABA BRANCH | OPay",3500,19000],
+      ["Betting | 8010000001 | SPORTYBET",100,5000],
+      ["Mobile Data | 8020000002 | DataMtn | 1GB Daily Plan",350,1500],
+      ["Transfer to TUNDE ADEWALE | OPay",1500,24000],
+      ["Electricity | capricorn_ikeja_prepaid",500,11000],
+      ["Transfer to NGOZI EZE | Access Bank",5000,100000],
+      ["Auto-save to OWealth Balance",500,30000],
+      ["TV | dstv | DStv Confam_1 Month",11000,11000],
+    ];
+    const credits=[
+      ["Transfer from EMEKA OBI | Zenith Bank | Lunch",2000,50000],
+      ["SALARY CREDIT FROM ACME LTD",250000,450000],
+      ["Transfer from AISHA BELLO | OPay",700,20000],
+      ["OWealth Withdrawal(Transaction Payment)",300,8000],
+      ["Transfer from OPay Payment Gateway | Sporty",58,9000],
+    ];
+    let bal=120000;
+    for(let m=1;m<=6;m++){
+      const n=28+Math.floor(Math.random()*22);
+      for(let i=0;i<n;i++){
+        const day=String(1+Math.floor(Math.random()*27)).padStart(2,"0");
+        const credit=Math.random()<0.34;
+        const src=credit?credits[Math.floor(Math.random()*credits.length)]
+                        :debits[Math.floor(Math.random()*debits.length)];
+        const amt=(src[1]+Math.random()*(src[2]-src[1])).toFixed(2);
+        bal=Math.max(0,bal+(credit?+amt:-amt));
+        rows.push(`2026-0${m}-${day},${src[0]},${credit?"":amt},${credit?amt:""},${bal.toFixed(2)}`);
+      }
+    }
+    return rows.join("\n");
+  }
+
+  async function typeQuery(text){
+    const q=$("query"); q.focus(); q.value="";
+    for(const ch of text){ q.value+=ch; await sleep(42+Math.random()*46); }
+  }
+
+  async function start(){
+    await sleep(900);
+    const f=new File([demoCsv()],"OPay_Statement_Jan-Jun_2026.csv",{type:"text/csv"});
+    const dt=new DataTransfer(); dt.items.add(f);
+    fileInput.files=dt.files; setFile(f);
+    const queries=[
+      "chicken republic",
+      "how much did I spend on betting this year",
+      "adewale",
+      "salary last 3 months",
+      "everything sent to ngozi"
+    ];
+    for(let i=0;;i=(i+1)%queries.length){
+      await sleep(1100);
+      await typeQuery(queries[i]);
+      await sleep(450);
+      await analyze();
+      await sleep(6500);
+      window.scrollTo({top:0,behavior:"smooth"});
+      await sleep(900);
+    }
+  }
+  start();
+})();
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 </script>
 </body>
