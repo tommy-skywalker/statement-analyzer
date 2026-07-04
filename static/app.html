@@ -38,18 +38,22 @@
   .mono{font-family:ui-monospace,"SF Mono",Menlo,monospace}
   .muted{color:var(--muted)}
 
-  /* top bar */
-  .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:30px}
-  .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px}
-  .brand .logo{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:#fff;
-    background:var(--btn-bg);color:var(--btn-fg);font-size:15px}
-  .topbar .right{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-  .btn-ghost{display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--line);
-    color:var(--ink-2);font-size:13px;font-weight:600;padding:9px 14px;border-radius:10px;cursor:pointer;
+  /* top bar: one clean row — brand left, [Export][New][theme] right, equal heights */
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:nowrap;margin-bottom:26px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px;white-space:nowrap;flex:none}
+  .brand .logo{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;
+    background:var(--btn-bg);color:var(--btn-fg);font-size:15px;flex:none}
+  .topbar .right{display:flex;gap:8px;align-items:center;flex-wrap:nowrap;flex:none}
+  .btn-ghost{display:inline-flex;align-items:center;gap:7px;height:36px;background:var(--card);border:1px solid var(--line);
+    color:var(--ink-2);font-size:13px;font-weight:600;padding:0 14px;border-radius:10px;cursor:pointer;
     box-shadow:var(--shadow-sm);transition:.15s;white-space:nowrap}
   .btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
   .btn-ghost[disabled]{opacity:.5;cursor:not-allowed}
-  .icon-btn{width:38px;height:38px;padding:0;justify-content:center;font-size:16px}
+  .icon-btn{width:36px;height:36px;padding:0;justify-content:center;font-size:16px;flex:none}
+  @media(max-width:560px){
+    .topbar{flex-wrap:wrap}
+    .topbar .right{width:100%;justify-content:flex-end}
+  }
 
   /* export dropdown */
   .menu-wrap{position:relative}
@@ -141,7 +145,7 @@
   .pill.debit{background:var(--red-bg);color:var(--red)} .pill.debit .dot{background:var(--red)}
   .empty{padding:40px;text-align:center;color:var(--muted);font-size:14px}
 
-  .right{display:flex;flex-direction:column;gap:18px}
+  .cols .right{display:flex;flex-direction:column;gap:18px}
   .breakdown{padding:20px}
   .breakdown h3{font-size:15px;font-weight:700;margin-bottom:4px}
   .breakdown .net{font-size:clamp(18px,2.6vw,26px);font-weight:780;letter-spacing:-.02em;line-height:1.15;margin:8px 0 2px;overflow-wrap:anywhere;word-break:break-word;font-variant-numeric:tabular-nums}
@@ -309,7 +313,6 @@
   <div class="topbar">
     <a class="brand" href="/" style="color:inherit;text-decoration:none"><span class="logo"><svg class="svic" style="width:16px;height:16px;stroke-width:1.9"><use href="#i-logo"/></svg></span> Statement Analyzer</a>
     <div class="right">
-      <button class="btn-ghost icon-btn" id="themeBtn" title="Toggle dark mode" aria-label="Toggle dark mode"><svg class="svic"><use href="#i-moon"/></svg></button>
       <div class="menu-wrap">
         <button class="btn-ghost" id="exportBtn" disabled><svg class="svic"><use href="#i-download"/></svg> Export</button>
         <div class="export-menu" id="exportMenu">
@@ -321,6 +324,7 @@
         </div>
       </div>
       <button class="btn-ghost" onclick="location.reload()"><svg class="svic"><use href="#i-refresh"/></svg> New</button>
+      <button class="btn-ghost icon-btn" id="themeBtn" title="Toggle dark mode" aria-label="Toggle dark mode"><svg class="svic"><use href="#i-moon"/></svg></button>
     </div>
   </div>
 
@@ -848,25 +852,27 @@ function hideError(){$("error").classList.remove("show");}
   localStorage.setItem("sa-feedback-done","demo"); // never show the modal on camera
   const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
 
+  // Entirely fictional sample data: generic Nigerian names, fake numbers.
   function demoCsv(){
-    const rows=["Date,Description,Debit,Credit,Balance"];
+    const rows=["Date,Description,Debit(₦),Credit(₦),Balance(₦)"];
     const debits=[
-      ["Transfer to FOOD CONCEPTS PLC - SURULERE CHICKEN REPUBLIC | MONIE POINT",8000,26000],
+      ["Transfer to FOOD CONCEPTS PLC - SURULERE CHICKEN REPUBLIC | POS",8000,26000],
       ["POS Chicken Republic LAG, YABA BRANCH | OPay",3500,19000],
       ["Betting | 8010000001 | SPORTYBET",100,5000],
       ["Mobile Data | 8020000002 | DataMtn | 1GB Daily Plan",350,1500],
-      ["Transfer to TUNDE ADEWALE | OPay",1500,24000],
-      ["Electricity | capricorn_ikeja_prepaid",500,11000],
-      ["Transfer to NGOZI EZE | Access Bank",5000,100000],
-      ["Auto-save to OWealth Balance",500,30000],
+      ["Transfer to TUNDE ADEWALE | OPay | 8030000003",1500,24000],
+      ["Electricity | ikeja_prepaid | 12.4 kWh",500,11000],
+      ["Transfer to NGOZI EZE | Access Bank | 0010000004",5000,100000],
+      ["Auto-save to Wallet Balance",500,30000],
       ["TV | dstv | DStv Confam_1 Month",11000,11000],
+      ["Transfer to YUSUF IBRAHIM | GTBank | 0020000005",2500,40000],
     ];
     const credits=[
-      ["Transfer from EMEKA OBI | Zenith Bank | Lunch",2000,50000],
+      ["Transfer from EMEKA OBI | Zenith Bank | 2010000006 | Lunch",2000,50000],
       ["SALARY CREDIT FROM ACME LTD",250000,450000],
-      ["Transfer from AISHA BELLO | OPay",700,20000],
-      ["OWealth Withdrawal(Transaction Payment)",300,8000],
-      ["Transfer from OPay Payment Gateway | Sporty",58,9000],
+      ["Transfer from AISHA BELLO | OPay | 8040000007",700,20000],
+      ["Wallet Withdrawal(Transaction Payment)",300,8000],
+      ["Transfer from FUNKE ADEYEMI | UBA | 1010000008",58,9000],
     ];
     let bal=120000;
     for(let m=1;m<=6;m++){
@@ -891,7 +897,7 @@ function hideError(){$("error").classList.remove("show");}
 
   async function start(){
     await sleep(900);
-    const f=new File([demoCsv()],"OPay_Statement_Jan-Jun_2026.csv",{type:"text/csv"});
+    const f=new File([demoCsv()],"Demo_Wallet_Statement_Jan-Jun_2026.csv",{type:"text/csv"});
     const dt=new DataTransfer(); dt.items.add(f);
     fileInput.files=dt.files; setFile(f);
     const queries=[
