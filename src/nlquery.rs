@@ -32,6 +32,7 @@ const STOPWORDS: &[&str] = &[
     "the", "a", "an", "on", "at", "in", "of", "for", "to", "and", "that", "with", "is", "was",
     "were", "been", "show", "tell", "know", "knowing", "wanna", "want", "see", "find", "get",
     "getting", "total", "all", "sum", "amount", "transactions", "transaction", "txns", "txn",
+    "everything", "anything", "something", "every", "any", "whole", "entire",
     "account", "number", "acct", "money", "cash", "spent", "spend", "spending", "paid", "pay",
     "sent", "send", "sending", "bought", "buy", "buying", "purchase", "purchased", "withdraw",
     "withdrew", "withdrawal", "received", "receive", "receiving", "earned", "earn", "credited",

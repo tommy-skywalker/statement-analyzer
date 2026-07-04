@@ -20,18 +20,18 @@
   <path d="M120 480 V470 H130" stroke="#4ade80" stroke-width="3" fill="none"/>
   <path d="M960 880 V890 H950" stroke="#4ade80" stroke-width="3" fill="none"/>
 
-  <text x="156" y="540" font-size="26" fill="#98a2ac">&gt; "how much did I spend on <tspan fill="#ffffff" font-weight="bold">chicken</tspan> last month?"</text>
-  <text x="156" y="592" font-size="22" fill="#6a747d">ANALYSING 9,941 TRANSACTIONS…</text>
+  <text x="156" y="540" font-size="26" fill="#98a2ac">&gt; "everything sent to <tspan fill="#ffffff" font-weight="bold">Chiamaka</tspan> this year"</text>
+  <text x="156" y="592" font-size="22" fill="#6a747d">SHE ASKED WHAT YOU'VE DONE FOR HER. ANALYSING…</text>
 
   <g font-size="24">
     <text x="156" y="668" fill="#6a747d">MONEY OUT</text>
-    <text x="924" y="668" fill="#f0574f" font-weight="bold" text-anchor="end">-₦193,558.60</text>
+    <text x="924" y="668" fill="#f0574f" font-weight="bold" text-anchor="end">-₦1,847,300.00</text>
     <text x="156" y="722" fill="#6a747d">TRANSACTIONS</text>
-    <text x="924" y="722" fill="#c9d1d9" font-weight="bold" text-anchor="end">16</text>
+    <text x="924" y="722" fill="#c9d1d9" font-weight="bold" text-anchor="end">63</text>
     <text x="156" y="776" fill="#6a747d">PERIOD</text>
-    <text x="924" y="776" fill="#c9d1d9" font-weight="bold" text-anchor="end">1 month</text>
+    <text x="924" y="776" fill="#c9d1d9" font-weight="bold" text-anchor="end">Jan – Jun 2026</text>
     <text x="156" y="830" fill="#6a747d">VERDICT</text>
-    <text x="924" y="830" fill="#4ade80" font-weight="bold" text-anchor="end">certified chicken investor</text>
+    <text x="924" y="830" fill="#4ade80" font-weight="bold" text-anchor="end">premium boyfriend behaviour</text>
   </g>
   <line x1="156" y1="686" x2="924" y2="686" stroke="#222a2f"/>
   <line x1="156" y1="740" x2="924" y2="740" stroke="#222a2f"/>

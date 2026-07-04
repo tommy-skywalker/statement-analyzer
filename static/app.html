@@ -322,6 +322,7 @@
           <button data-fmt="csv"><span class="em-ic"><svg class="svic"><use href="#i-grid"/></svg></span> CSV spreadsheet <span class="ext">.csv</span></button>
           <button data-fmt="txt"><span class="em-ic"><svg class="svic"><use href="#i-file"/></svg></span> Text report <span class="ext">.txt</span></button>
           <button data-fmt="json"><span class="em-ic"><svg class="svic"><use href="#i-code"/></svg></span> Raw JSON <span class="ext">.json</span></button>
+          <button data-fmt="card"><span class="em-ic"><svg class="svic"><use href="#i-spark"/></svg></span> Share card <span class="ext">.png</span></button>
         </div>
       </div>
       <button class="btn-ghost" onclick="location.reload()"><svg class="svic"><use href="#i-refresh"/></svg> New</button>
@@ -778,10 +779,85 @@ function buildPdf(lines){
   return new Blob([out],{type:'application/pdf'});
 }
 
+/* ---- shareable IG-style result card (1080x1080 canvas) ---- */
+function verdictFor(d){
+  const kw=(d.interpreted&&d.interpreted.keyword)||d.query||"";
+  const short=kw.trim().split(/\s+/).slice(0,2).join(" ")||"spending";
+  if(d.summary.matched_transactions===0) return "case dismissed. no receipts";
+  if(d.debit.count>0 && d.credit.count===0) return `certified ${short} investor`;
+  if(d.credit.count>0 && d.debit.count===0) return "money in only. we love to see it";
+  if(d.summary.net_amount<0) return "outflow heavy. receipts don't lie";
+  return "net positive. financial glow-up";
+}
+function wrapText(x,text,maxW){
+  const words=text.split(" "),lines=[];let line="";
+  for(const w of words){
+    const t=line?line+" "+w:w;
+    if(x.measureText(t).width>maxW && line){lines.push(line);line=w;}else line=t;
+  }
+  if(line)lines.push(line);
+  return lines.slice(0,3);
+}
+function shareCardCanvas(){
+  const d=lastData,sym=d.currency.symbol==="?"?"":d.currency.symbol;
+  const cv=document.createElement("canvas");cv.width=1080;cv.height=1080;
+  const x=cv.getContext("2d");
+  const MONO="Menlo, Consolas, monospace", SANS='"Helvetica Neue", Helvetica, Arial, sans-serif';
+  x.fillStyle="#08090a";x.fillRect(0,0,1080,1080);
+  // corner brackets
+  x.strokeStyle="#4ade80";x.lineWidth=5;
+  x.beginPath();x.moveTo(50,90);x.lineTo(50,50);x.lineTo(90,50);x.stroke();
+  x.beginPath();x.moveTo(1030,990);x.lineTo(1030,1030);x.lineTo(990,1030);x.stroke();
+  // status bar
+  x.fillStyle="#0d1011";x.fillRect(50,50,980,52);
+  x.strokeStyle="#222a2f";x.lineWidth=1;x.strokeRect(50.5,50.5,980,52);
+  x.font="bold 21px "+MONO;x.fillStyle="#c9d1d9";x.fillText("STATEMENT ANALYZER",74,84);
+  x.fillStyle="#4ade80";x.fillText("// RECEIPTS",74+x.measureText("STATEMENT ANALYZER ").width,84);
+  x.fillStyle="#0e2317";x.fillRect(880,62,126,30);x.strokeStyle="#4ade80";x.strokeRect(880.5,62.5,126,30);
+  x.font="bold 18px "+MONO;x.fillStyle="#4ade80";x.fillText("VERIFIED",892,84);
+  // query headline
+  x.font="800 62px "+SANS;x.fillStyle="#ffffff";
+  const q='"'+(d.query||"all transactions")+'"';
+  const lines=wrapText(x,q,900);
+  let y=230;for(const l of lines){x.fillText(l,90,y);y+=72;}
+  x.font="22px "+MONO;x.fillStyle="#6a747d";
+  x.fillText("ANALYSING "+fmtInt(d.summary.total_transactions_scanned)+" TRANSACTIONS…",92,y+14);
+  // result box
+  const bx=120,bw=840,by=Math.max(y+70,430),bh=430;
+  x.fillStyle="#0d1011";x.fillRect(bx,by,bw,bh);
+  x.strokeStyle="#222a2f";x.strokeRect(bx+.5,by+.5,bw,bh);
+  x.strokeStyle="#4ade80";x.lineWidth=3;
+  x.beginPath();x.moveTo(bx,by+12);x.lineTo(bx,by);x.lineTo(bx+12,by);x.stroke();
+  x.beginPath();x.moveTo(bx+bw,by+bh-12);x.lineTo(bx+bw,by+bh);x.lineTo(bx+bw-12,by+bh);x.stroke();
+  const rows=[
+    ["MONEY OUT",(d.debit.total>0?"-":"")+sym+fmtNum(Math.abs(d.debit.total)),"#f0574f"],
+    ["MONEY IN",(d.credit.total>0?"+":"")+sym+fmtNum(Math.abs(d.credit.total)),"#4ade80"],
+    ["TRANSACTIONS",fmtInt(d.summary.matched_transactions),"#c9d1d9"],
+    ["PERIOD",d.summary.overall_duration?d.summary.overall_duration.human:"··","#c9d1d9"],
+    ["VERDICT",verdictFor(d),"#4ade80"],
+  ];
+  let ry=by+72;
+  for(const [k,v,col] of rows){
+    x.font="24px "+MONO;x.fillStyle="#6a747d";x.fillText(k,bx+36,ry);
+    x.font="bold 26px "+MONO;x.fillStyle=col;
+    x.fillText(v,bx+bw-36-x.measureText(v).width,ry);
+    if(k!=="VERDICT"){x.strokeStyle="#222a2f";x.lineWidth=1;
+      x.beginPath();x.moveTo(bx+36,ry+22);x.lineTo(bx+bw-36,ry+22);x.stroke();}
+    ry+=76;
+  }
+  // footer
+  x.textAlign="center";
+  x.font="bold 30px "+MONO;x.fillStyle="#4ade80";x.fillText("YOURSTATEMENTANALYZER.COM",540,982);
+  x.font="20px "+MONO;x.fillStyle="#6a747d";x.fillText("Any statement · Any question · Instant answers",540,1024);
+  x.textAlign="left";
+  return cv;
+}
+
 function doExport(fmt){
   if(!lastData)return;
   const base=(lastData.file.name.replace(/\.[^.]+$/,'')||'analysis')+'-analysis';
   try{
+    if(fmt==='card'){ shareCardCanvas().toBlob(b=>download(b,base+'-card.png'),'image/png'); return; }
     if(fmt==='json')      download(new Blob([JSON.stringify(lastData,null,2)],{type:'application/json'}),base+'.json');
     else if(fmt==='csv')  download(new Blob(['﻿'+toCsv()],{type:'text/csv;charset=utf-8'}),base+'.csv');
     else if(fmt==='txt')  download(new Blob([reportLines(false).join('\n')],{type:'text/plain;charset=utf-8'}),base+'.txt');
