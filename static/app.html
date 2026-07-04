@@ -799,36 +799,38 @@ function wrapText(x,text,maxW){
   return lines.slice(0,3);
 }
 function shareCardCanvas(){
+  // 1080x1920 portrait: sized for phone screens (WhatsApp status / IG story / TikTok).
   const d=lastData,sym=d.currency.symbol==="?"?"":d.currency.symbol;
-  const cv=document.createElement("canvas");cv.width=1080;cv.height=1080;
+  const W=1080,H=1920;
+  const cv=document.createElement("canvas");cv.width=W;cv.height=H;
   const x=cv.getContext("2d");
   const MONO="Menlo, Consolas, monospace", SANS='"Helvetica Neue", Helvetica, Arial, sans-serif';
-  x.fillStyle="#08090a";x.fillRect(0,0,1080,1080);
+  x.fillStyle="#08090a";x.fillRect(0,0,W,H);
   // corner brackets
-  x.strokeStyle="#4ade80";x.lineWidth=5;
-  x.beginPath();x.moveTo(50,90);x.lineTo(50,50);x.lineTo(90,50);x.stroke();
-  x.beginPath();x.moveTo(1030,990);x.lineTo(1030,1030);x.lineTo(990,1030);x.stroke();
+  x.strokeStyle="#4ade80";x.lineWidth=6;
+  x.beginPath();x.moveTo(60,120);x.lineTo(60,60);x.lineTo(120,60);x.stroke();
+  x.beginPath();x.moveTo(1020,1800);x.lineTo(1020,1860);x.lineTo(960,1860);x.stroke();
   // status bar
-  x.fillStyle="#0d1011";x.fillRect(50,50,980,52);
-  x.strokeStyle="#222a2f";x.lineWidth=1;x.strokeRect(50.5,50.5,980,52);
-  x.font="bold 21px "+MONO;x.fillStyle="#c9d1d9";x.fillText("STATEMENT ANALYZER",74,84);
-  x.fillStyle="#4ade80";x.fillText("// RECEIPTS",74+x.measureText("STATEMENT ANALYZER ").width,84);
-  x.fillStyle="#0e2317";x.fillRect(880,62,126,30);x.strokeStyle="#4ade80";x.strokeRect(880.5,62.5,126,30);
-  x.font="bold 18px "+MONO;x.fillStyle="#4ade80";x.fillText("VERIFIED",892,84);
+  x.fillStyle="#0d1011";x.fillRect(60,60,960,64);
+  x.strokeStyle="#222a2f";x.lineWidth=1;x.strokeRect(60.5,60.5,960,64);
+  x.font="bold 25px "+MONO;x.fillStyle="#c9d1d9";x.fillText("STATEMENT ANALYZER",88,102);
+  x.fillStyle="#4ade80";x.fillText("// RECEIPTS",88+x.measureText("STATEMENT ANALYZER ").width,102);
+  x.fillStyle="#0e2317";x.fillRect(850,74,146,36);x.strokeStyle="#4ade80";x.strokeRect(850.5,74.5,146,36);
+  x.font="bold 21px "+MONO;x.fillStyle="#4ade80";x.fillText("VERIFIED",866,100);
   // query headline
-  x.font="800 62px "+SANS;x.fillStyle="#ffffff";
+  x.font="800 78px "+SANS;x.fillStyle="#ffffff";
   const q='"'+(d.query||"all transactions")+'"';
   const lines=wrapText(x,q,900);
-  let y=230;for(const l of lines){x.fillText(l,90,y);y+=72;}
-  x.font="22px "+MONO;x.fillStyle="#6a747d";
-  x.fillText("ANALYSING "+fmtInt(d.summary.total_transactions_scanned)+" TRANSACTIONS…",92,y+14);
+  let y=330;for(const l of lines){x.fillText(l,90,y);y+=92;}
+  x.font="27px "+MONO;x.fillStyle="#6a747d";
+  x.fillText("ANALYSING "+fmtInt(d.summary.total_transactions_scanned)+" TRANSACTIONS…",92,y+24);
   // result box
-  const bx=120,bw=840,by=Math.max(y+70,430),bh=430;
+  const bx=80,bw=920,by=Math.max(y+110,720),bh=640;
   x.fillStyle="#0d1011";x.fillRect(bx,by,bw,bh);
   x.strokeStyle="#222a2f";x.strokeRect(bx+.5,by+.5,bw,bh);
-  x.strokeStyle="#4ade80";x.lineWidth=3;
-  x.beginPath();x.moveTo(bx,by+12);x.lineTo(bx,by);x.lineTo(bx+12,by);x.stroke();
-  x.beginPath();x.moveTo(bx+bw,by+bh-12);x.lineTo(bx+bw,by+bh);x.lineTo(bx+bw-12,by+bh);x.stroke();
+  x.strokeStyle="#4ade80";x.lineWidth=4;
+  x.beginPath();x.moveTo(bx,by+16);x.lineTo(bx,by);x.lineTo(bx+16,by);x.stroke();
+  x.beginPath();x.moveTo(bx+bw,by+bh-16);x.lineTo(bx+bw,by+bh);x.lineTo(bx+bw-16,by+bh);x.stroke();
   const rows=[
     ["MONEY OUT",(d.debit.total>0?"-":"")+sym+fmtNum(Math.abs(d.debit.total)),"#f0574f"],
     ["MONEY IN",(d.credit.total>0?"+":"")+sym+fmtNum(Math.abs(d.credit.total)),"#4ade80"],
@@ -836,19 +838,21 @@ function shareCardCanvas(){
     ["PERIOD",d.summary.overall_duration?d.summary.overall_duration.human:"··","#c9d1d9"],
     ["VERDICT",verdictFor(d),"#4ade80"],
   ];
-  let ry=by+72;
+  let ry=by+112;
   for(const [k,v,col] of rows){
-    x.font="24px "+MONO;x.fillStyle="#6a747d";x.fillText(k,bx+36,ry);
-    x.font="bold 26px "+MONO;x.fillStyle=col;
-    x.fillText(v,bx+bw-36-x.measureText(v).width,ry);
+    x.font="28px "+MONO;x.fillStyle="#6a747d";x.fillText(k,bx+44,ry);
+    // shrink long values to fit
+    let fs=34;x.font="bold "+fs+"px "+MONO;
+    while(x.measureText(v).width>bw-320 && fs>20){fs-=2;x.font="bold "+fs+"px "+MONO;}
+    x.fillStyle=col;x.fillText(v,bx+bw-44-x.measureText(v).width,ry);
     if(k!=="VERDICT"){x.strokeStyle="#222a2f";x.lineWidth=1;
-      x.beginPath();x.moveTo(bx+36,ry+22);x.lineTo(bx+bw-36,ry+22);x.stroke();}
-    ry+=76;
+      x.beginPath();x.moveTo(bx+44,ry+34);x.lineTo(bx+bw-44,ry+34);x.stroke();}
+    ry+=110;
   }
   // footer
   x.textAlign="center";
-  x.font="bold 30px "+MONO;x.fillStyle="#4ade80";x.fillText("YOURSTATEMENTANALYZER.COM",540,982);
-  x.font="20px "+MONO;x.fillStyle="#6a747d";x.fillText("Any statement · Any question · Instant answers",540,1024);
+  x.font="bold 38px "+MONO;x.fillStyle="#4ade80";x.fillText("YOURSTATEMENTANALYZER.COM",W/2,1740);
+  x.font="24px "+MONO;x.fillStyle="#6a747d";x.fillText("Any statement · Any question · Instant answers",W/2,1792);
   x.textAlign="left";
   return cv;
 }
