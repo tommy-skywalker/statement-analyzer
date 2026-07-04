@@ -601,7 +601,9 @@ function render(d){
   $("warns").innerHTML = (d.warnings||[]).map(w=>`<div class="warn">${svic("i-alert")} <span>${escapeHtml(w)}</span></div>`).join("");
 
   $("results").classList.add("show");
-  $("results").scrollIntoView({behavior:"smooth",block:"start"});
+  // Stay at the top so the header/search stays visible; the user (or the
+  // "View transactions" button) decides when to scroll down.
+  window.scrollTo({top:0,behavior:"smooth"});
 }
 
 function statCard(color,icon,label,value,foot,valColor){
