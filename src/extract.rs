@@ -43,6 +43,36 @@ impl Extracted {
         }
         out
     }
+
+    /// Concatenate content but stop after ~`max_bytes` — enough for currency
+    /// detection without materialising the whole document (which can be tens
+    /// of MB) into a second String.
+    pub fn raw_text_sample(&self, max_bytes: usize) -> String {
+        let mut out = String::with_capacity(max_bytes.min(1 << 16));
+        'outer: for b in &self.blocks {
+            match b {
+                Block::Table { rows, .. } => {
+                    for r in rows {
+                        out.push_str(&r.join(" "));
+                        out.push('\n');
+                        if out.len() >= max_bytes {
+                            break 'outer;
+                        }
+                    }
+                }
+                Block::Text { lines, .. } => {
+                    for l in lines {
+                        out.push_str(l);
+                        out.push('\n');
+                        if out.len() >= max_bytes {
+                            break 'outer;
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
 }
 
 fn ext_of(filename: &str) -> String {

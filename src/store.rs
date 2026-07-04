@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_visitor ON events(visitor);
 CREATE INDEX IF NOT EXISTS idx_events_country ON events(country);
+CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
 
 CREATE TABLE IF NOT EXISTS feedback (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,7 +60,11 @@ pub struct FeedbackIn {
 }
 
 pub struct Store {
-    conn: Mutex<Connection>,
+    // Separate connections: with WAL, reads (admin dashboard aggregations)
+    // never block writes (event/feedback inserts). A slow stats query on the
+    // read connection can't stall analytics recording on the write connection.
+    write: Mutex<Connection>,
+    read: Mutex<Connection>,
 }
 
 impl Store {
@@ -69,14 +74,29 @@ impl Store {
                 let _ = std::fs::create_dir_all(parent);
             }
         }
-        let conn = Connection::open(path)?;
-        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
-        conn.execute_batch(SCHEMA)?;
-        Ok(Self { conn: Mutex::new(conn) })
+        let write = Connection::open(path)?;
+        write.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000;")?;
+        write.execute_batch(SCHEMA)?;
+
+        let read = Connection::open(path)?;
+        read.execute_batch("PRAGMA query_only=ON; PRAGMA busy_timeout=5000;")?;
+
+        Ok(Self { write: Mutex::new(write), read: Mutex::new(read) })
+    }
+
+    /// Delete events older than `older_than_days`. Returns rows removed.
+    pub fn prune(&self, older_than_days: i64) -> i64 {
+        if let Ok(conn) = self.write.lock() {
+            let cutoff = now_secs() - older_than_days.max(1) * 86_400;
+            return conn
+                .execute("DELETE FROM events WHERE ts < ?1", params![cutoff])
+                .unwrap_or(0) as i64;
+        }
+        0
     }
 
     pub fn record_event(&self, e: &EventIn) {
-        if let Ok(conn) = self.conn.lock() {
+        if let Ok(conn) = self.write.lock() {
             let _ = conn.execute(
                 "INSERT INTO events (ts,visitor,ip_hash,country,region,city,file_kind,size_bytes,scanned,matched,currency)
                  VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
@@ -89,7 +109,7 @@ impl Store {
     }
 
     pub fn record_feedback(&self, f: &FeedbackIn) {
-        if let Ok(conn) = self.conn.lock() {
+        if let Ok(conn) = self.write.lock() {
             let _ = conn.execute(
                 "INSERT INTO feedback (ts,visitor,country,stars,review,would_pay,price)
                  VALUES (?1,?2,?3,?4,?5,?6,?7)",
@@ -99,7 +119,7 @@ impl Store {
     }
 
     pub fn stats(&self) -> Stats {
-        let conn = match self.conn.lock() {
+        let conn = match self.read.lock() {
             Ok(c) => c,
             Err(_) => return Stats::default(),
         };

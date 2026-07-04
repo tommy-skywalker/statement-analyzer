@@ -214,9 +214,12 @@ Liveness probe → `{"status":"ok", ...}`.
 | `ADMIN_TOKEN` | *(random)* | internal session token issued after login (rarely set manually) |
 | `DB_PATH` | `data/analytics.db` | SQLite analytics file (use a persistent volume in prod) |
 | `IP_SALT` | *(random per start)* | salt for hashing IPs; set a fixed value to keep unique-IP counts stable across restarts |
-| `MAX_UPLOAD_MB` | `200` | max upload size in MB |
+| `MAX_UPLOAD_MB` | `25` | max upload size in MB (rejects larger to protect memory) |
 | `RATE_ANALYZE_PER_MIN` | `20` | per-IP `/api/analyze` requests per minute |
 | `RATE_FEEDBACK_PER_MIN` | `5` | per-IP `/api/feedback` requests per minute |
+| `ALLOWED_ORIGINS` | *(unset = permissive)* | comma-separated origins for CORS lockdown, e.g. `https://yourstatementanalyzer.com,https://www.yourstatementanalyzer.com` |
+| `SESSION_TTL_HOURS` | `12` | admin dashboard session lifetime |
+| `EVENTS_RETENTION_DAYS` | `365` | analytics events older than this are pruned (on boot + every 6h) |
 
 ---
 

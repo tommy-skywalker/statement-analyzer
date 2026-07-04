@@ -47,6 +47,10 @@ struct AppState {
     ip_salt: Arc<String>,
     geo_cache: Arc<Mutex<HashMap<String, geo::GeoInfo>>>,
     analysis_cache: Arc<Mutex<AnalysisCache>>,
+    // Short-lived admin session tokens (token -> issued-at). The permanent
+    // admin_token is never sent to the browser anymore; the UI gets one of these.
+    admin_sessions: Arc<Mutex<HashMap<String, std::time::Instant>>>,
+    session_ttl: std::time::Duration,
 }
 
 /// LRU-ish cache of parsed statements so keyword changes skip re-parsing.
@@ -102,7 +106,7 @@ async fn main() {
     let f_max = env_u32("RATE_FEEDBACK_PER_MIN", 5);
 
     let state = AppState {
-        store,
+        store: store.clone(),
         analyze_limiter: Arc::new(RateLimiter::new(a_max, 60)),
         feedback_limiter: Arc::new(RateLimiter::new(f_max, 60)),
         login_limiter: Arc::new(RateLimiter::new(10, 60)),
@@ -111,10 +115,46 @@ async fn main() {
         admin_token: Arc::new(admin_token),
         ip_salt: Arc::new(ip_salt),
         geo_cache: Arc::new(Mutex::new(HashMap::new())),
-        analysis_cache: Arc::new(Mutex::new(AnalysisCache::new(16))),
+        analysis_cache: Arc::new(Mutex::new(AnalysisCache::new(32))),
+        admin_sessions: Arc::new(Mutex::new(HashMap::new())),
+        session_ttl: std::time::Duration::from_secs(env_u32("SESSION_TTL_HOURS", 12) as u64 * 3600),
     };
 
-    let max_mb = env_u32("MAX_UPLOAD_MB", 200) as usize;
+    let max_mb = env_u32("MAX_UPLOAD_MB", 25) as usize;
+
+    // Background retention: prune events older than N days, on boot and daily.
+    {
+        let store = store.clone();
+        let days = env_u32("EVENTS_RETENTION_DAYS", 365) as i64;
+        let removed = store.prune(days);
+        if removed > 0 {
+            tracing::info!("pruned {removed} events older than {days} days");
+        }
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(6 * 3600));
+            loop {
+                tick.tick().await;
+                let n = tokio::task::block_in_place(|| store.prune(days));
+                if n > 0 {
+                    tracing::info!("pruned {n} old events");
+                }
+            }
+        });
+    }
+
+    // CORS: lock to ALLOWED_ORIGINS (comma-separated) in production; permissive if unset.
+    let cors = match std::env::var("ALLOWED_ORIGINS") {
+        Ok(v) if !v.trim().is_empty() => {
+            let origins: Vec<axum::http::HeaderValue> =
+                v.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+            tracing::info!("CORS locked to: {v}");
+            CorsLayer::new()
+                .allow_origin(origins)
+                .allow_methods(tower_http::cors::Any)
+                .allow_headers(tower_http::cors::Any)
+        }
+        _ => CorsLayer::permissive(),
+    };
 
     let app = Router::new()
         .route("/", get(index))
@@ -129,8 +169,9 @@ async fn main() {
         .route("/api/admin/login", post(admin_login))
         .route("/api/admin/stats", get(admin_stats))
         .layer(middleware::from_fn(security_headers))
+        .layer(tower_http::compression::CompressionLayer::new())
         .layer(DefaultBodyLimit::max(max_mb * 1024 * 1024))
-        .layer(CorsLayer::permissive())
+        .layer(cors)
         .with_state(state);
 
     let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8000);
@@ -320,20 +361,29 @@ async fn analyze(
         0.0
     };
 
-    // Record analytics only on a fresh parse (not on keyword re-filters).
-    let geo = resolve_geo(&st, &headers, &ip).await;
-    st.store.record_event(&store::EventIn {
-        visitor,
-        ip_hash: security::hash_ip(&ip, &st.ip_salt),
-        country: geo.country,
-        region: geo.region,
-        city: geo.city,
-        file_kind: result.file.kind.clone(),
-        size_bytes: result.file.size_bytes as i64,
-        scanned: result.summary.total_transactions_scanned as i64,
-        matched: result.summary.matched_transactions as i64,
-        currency: result.currency.code.clone(),
-    });
+    // Record analytics off the hot path (only on a fresh parse) — the geo
+    // lookup can take up to ~1.8s and must never delay the user's response.
+    {
+        let st2 = st.clone();
+        let headers2 = headers.clone();
+        let ip_hash = security::hash_ip(&ip, &st.ip_salt);
+        let ev = store::EventIn {
+            visitor,
+            ip_hash,
+            country: String::new(),
+            region: String::new(),
+            city: String::new(),
+            file_kind: result.file.kind.clone(),
+            size_bytes: result.file.size_bytes as i64,
+            scanned: result.summary.total_transactions_scanned as i64,
+            matched: result.summary.matched_transactions as i64,
+            currency: result.currency.code.clone(),
+        };
+        tokio::spawn(async move {
+            let geo = resolve_geo(&st2, &headers2, &ip).await;
+            st2.store.record_event(&store::EventIn { country: geo.country, region: geo.region, city: geo.city, ..ev });
+        });
+    }
 
     (StatusCode::OK, Json(serde_json::to_value(result).unwrap())).into_response()
 }
@@ -431,7 +481,15 @@ async fn admin_login(
     let ok = security::token_matches(&user, &st.admin_user)
         && security::token_matches(&pass, &st.admin_password);
     if ok {
-        (StatusCode::OK, Json(json!({ "ok": true, "token": st.admin_token.as_str() }))).into_response()
+        // Issue a short-lived session token (the permanent admin_token is never
+        // exposed to the browser).
+        let session = security::random_token();
+        if let Ok(mut s) = st.admin_sessions.lock() {
+            let now = std::time::Instant::now();
+            s.retain(|_, &mut issued| now.duration_since(issued) < st.session_ttl);
+            s.insert(session.clone(), now);
+        }
+        (StatusCode::OK, Json(json!({ "ok": true, "token": session }))).into_response()
     } else {
         (StatusCode::UNAUTHORIZED, Json(json!({ "ok": false, "error": "Invalid username or password" }))).into_response()
     }
@@ -449,11 +507,23 @@ async fn admin_stats(
         .or_else(|| q.get("token").cloned())
         .unwrap_or_default();
 
-    if !security::token_matches(&provided, &st.admin_token) {
-        return (StatusCode::UNAUTHORIZED, Json(json!({ "ok": false, "error": "Invalid admin token" }))).into_response();
+    // Accept a valid (unexpired) session token, or the permanent admin_token
+    // for scripted/API access.
+    let valid_session = st.admin_sessions.lock().ok().map_or(false, |mut s| {
+        let now = std::time::Instant::now();
+        s.retain(|_, &mut issued| now.duration_since(issued) < st.session_ttl);
+        s.get(&provided).is_some()
+    });
+    if !valid_session && !security::token_matches(&provided, &st.admin_token) {
+        return (StatusCode::UNAUTHORIZED, Json(json!({ "ok": false, "error": "Invalid or expired session" }))).into_response();
     }
 
-    let stats = st.store.stats();
+    // Run the (potentially heavy) aggregation off the async runtime.
+    let store = st.store.clone();
+    let stats = match tokio::task::spawn_blocking(move || store.stats()).await {
+        Ok(s) => s,
+        Err(_) => return bad_request("Stats query failed.".into()),
+    };
     (StatusCode::OK, Json(serde_json::to_value(stats).unwrap())).into_response()
 }
 

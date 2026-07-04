@@ -36,15 +36,22 @@ pub struct ParsedDoc {
 /// Extract + build transactions (the slow part). Cache the result.
 pub fn parse(filename: &str, bytes: &[u8]) -> Result<ParsedDoc, String> {
     let extracted = extract::extract(filename, bytes).map_err(|e| format!("Extraction failed: {e}"))?;
-    let raw_text = extracted.raw_text();
-    let currency = crate::currency::detect(&raw_text);
+    // Currency detection only needs a sample — avoid materialising a second
+    // full copy of a large document just to scan for symbols.
+    let currency = crate::currency::detect(&extracted.raw_text_sample(256 * 1024));
 
     let mut warnings = extracted.warnings.clone();
+    let mut multi_account = false;
     let mut txns: Vec<Transaction> = Vec::new();
     for block in &extracted.blocks {
         match block {
             Block::Table { source, rows } => table_to_txns(source, rows, &mut txns),
-            Block::Text { source, lines } => text_to_txns(source, lines, &mut txns),
+            Block::Text { source, lines } => {
+                if lines.iter().filter(|l| l.to_lowercase().contains("opening balance")).count() >= 2 {
+                    multi_account = true;
+                }
+                text_to_txns(source, lines, &mut txns);
+            }
         }
     }
     if txns.is_empty() {
@@ -52,7 +59,7 @@ pub fn parse(filename: &str, bytes: &[u8]) -> Result<ParsedDoc, String> {
             "No transactions could be parsed from this file. Check that it contains tabular or line-based statement data.".into(),
         );
     }
-    if raw_text.to_lowercase().matches("opening balance").count() >= 2 {
+    if multi_account {
         warnings.push(
             "This statement contains more than one account; analysing only the first (primary) account.".into(),
         );
@@ -766,5 +773,103 @@ fn empty_side(label: &str) -> SideStats {
         first_date: None,
         last_date: None,
         duration: None,
+    }
+}
+
+// ============================ tests ============================
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::Direction;
+    use chrono::{Datelike, NaiveDate};
+
+    fn opay_rows(rows: &[&str]) -> String {
+        // Wrap each transaction with a datetime prefix so row reconstruction fires.
+        let mut s = String::from("Account Statement\nOpening Balance\n");
+        for (i, r) in rows.iter().enumerate() {
+            let d = (i % 27) + 1;
+            s.push_str(&format!("{d:02} Jan 2026 1{}:36:10 {d:02} Jan 2026 {r}\n", i % 6));
+        }
+        s
+    }
+
+    #[test]
+    fn csv_debit_credit_columns_and_currency() {
+        let csv = "Date,Description,Debit(₦),Credit(₦),Balance\n\
+                   2026-01-05,SALARY ACME,,450000.00,450000\n\
+                   2026-01-12,POS CHICKEN,12500.50,,437499.50\n";
+        let r = run("t.csv", csv.as_bytes(), "");
+        assert_eq!(r.currency.code, "NGN");
+        assert_eq!(r.credit.count, 1);
+        assert_eq!(r.debit.count, 1);
+        assert!((r.credit.total - 450000.0).abs() < 0.01);
+        assert!((r.debit.total - 12500.50).abs() < 0.01);
+    }
+
+    #[test]
+    fn account_numbers_not_summed() {
+        let csv = "Date,Description,Account,Debit,Credit,Balance\n\
+                   2026-01-05,POS,9015413877,5000.00,,0\n\
+                   2026-01-06,SALARY,9015413877,,450000.00,0\n";
+        let r = run("t.csv", csv.as_bytes(), "");
+        assert!((r.debit.total - 5000.0).abs() < 0.01, "debit was {}", r.debit.total);
+        assert!((r.credit.total - 450000.0).abs() < 0.01, "credit was {}", r.credit.total);
+    }
+
+    #[test]
+    fn opay_text_rows_and_reference_fragments_ignored() {
+        let txt = opay_rows(&[
+            "Betting SPORTYBET 600.00 -- 0.00 Mobile 260101130100878491921527",
+            "Transfer from EMEKA -- 3000.00 3000.00 Mobile 000015260103100024803271212087",
+            "POS CHICKEN 2500.00 -- 0.00 Mobile 2601031301009250759420",
+            "Airtime -- 500.00 500.00 Mobile 2601031301009250759499",
+            "Betting 100.00 -- 0.00 Mobile 2601031301009250759477",
+            "Refund -- 58.00 58.00 Mobile 2601031301009250759466",
+        ]);
+        let r = run("s.txt", txt.as_bytes(), "");
+        assert_eq!(r.debit.count, 3, "debit count");
+        assert_eq!(r.credit.count, 3, "credit count");
+        assert!((r.debit.total - 3200.0).abs() < 0.01, "debit total {}", r.debit.total);
+        assert!((r.credit.total - 3558.0).abs() < 0.01, "credit total {}", r.credit.total);
+    }
+
+    #[test]
+    fn huge_number_rejected_and_normal_accepted() {
+        assert!(crate::util::parse_amount("9223372036854775807").is_none()); // 19-digit junk
+        assert!(crate::util::parse_amount("1,234.56").is_some());
+    }
+
+    #[test]
+    fn ids_on_a_text_line_are_not_amounts() {
+        // A phone/account number and a reference must be ignored; only the real
+        // decimal amount survives.
+        let toks = crate::util::find_amounts_in_line("Call 08030001234 ref 887766 paid 1,234.56");
+        assert_eq!(toks.len(), 1, "tokens: {:?}", toks.iter().map(|(m,_)| m.value).collect::<Vec<_>>());
+        assert!((toks[0].0.magnitude() - 1234.56).abs() < 0.01);
+    }
+
+    #[test]
+    fn currency_alias_needs_word_boundary() {
+        // "pancakes"/"cakes" contain "kes" but must NOT trigger Kenyan Shilling.
+        let c = crate::currency::detect("Paid ₦1,000 for pancakes and cakes");
+        assert_eq!(c.code, "NGN", "detected {:?}", c.code);
+    }
+
+    #[test]
+    fn nl_query_extracts_keyword_direction_and_range() {
+        let today = NaiveDate::from_ymd_opt(2026, 7, 4).unwrap();
+        let f = crate::nlquery::parse("how much did i spend on chicken last month", today);
+        assert_eq!(f.keyword, "chicken");
+        assert_eq!(f.direction, Some(Direction::Debit));
+        assert!(f.smart);
+        assert_eq!(f.date_from.unwrap().month(), 6);
+        assert_eq!(f.date_to.unwrap().month(), 6);
+    }
+
+    #[test]
+    fn empty_query_matches_all() {
+        let csv = "Date,Description,Debit,Credit,Balance\n2026-01-01,A,100.00,,0\n2026-01-02,B,,200.00,0\n";
+        let r = run("t.csv", csv.as_bytes(), "");
+        assert_eq!(r.summary.matched_transactions, 2);
     }
 }

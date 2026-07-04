@@ -8,7 +8,8 @@ use anyhow::Result;
 use std::io::{Cursor, Read};
 use std::process::Command;
 
-const MAX_MEMBER_BYTES: u64 = 512 * 1024 * 1024; // 512 MiB per member guard
+const MAX_MEMBER_BYTES: u64 = 64 * 1024 * 1024; // 64 MiB per member
+const MAX_TOTAL_BYTES: u64 = 128 * 1024 * 1024; // 128 MiB decompressed total (zip-bomb guard)
 
 pub fn parse_zip(filename: &str, bytes: &[u8], depth: usize) -> Result<Extracted> {
     let mut e = Extracted { kind: "zip".into(), parts: vec![], blocks: vec![], warnings: vec![] };
@@ -21,6 +22,7 @@ pub fn parse_zip(filename: &str, bytes: &[u8], depth: usize) -> Result<Extracted
         }
     };
 
+    let mut total: u64 = 0;
     for i in 0..zip.len() {
         let mut file = match zip.by_index(i) {
             Ok(f) => f,
@@ -36,6 +38,11 @@ pub fn parse_zip(filename: &str, bytes: &[u8], depth: usize) -> Result<Extracted
         if file.size() > MAX_MEMBER_BYTES {
             e.warnings.push(format!("ZIP member '{name}' too large, skipped"));
             continue;
+        }
+        total += file.size();
+        if total > MAX_TOTAL_BYTES {
+            e.warnings.push("Archive expands beyond the safe size limit; remaining members skipped.".into());
+            break;
         }
         let mut buf = Vec::with_capacity(file.size() as usize);
         if let Err(err) = file.read_to_end(&mut buf) {
@@ -78,9 +85,10 @@ pub fn parse_external(filename: &str, bytes: &[u8], depth: usize) -> Result<Extr
         }
     }
 
-    // Walk extracted files and recurse.
+    // Walk extracted files and recurse (bounded total decompressed size).
+    let mut total: u64 = 0;
     let mut stack = vec![out_dir.clone()];
-    while let Some(dir) = stack.pop() {
+    'walk: while let Some(dir) = stack.pop() {
         let rd = match std::fs::read_dir(&dir) {
             Ok(rd) => rd,
             Err(_) => continue,
@@ -89,7 +97,18 @@ pub fn parse_external(filename: &str, bytes: &[u8], depth: usize) -> Result<Extr
             let path = entry.path();
             if path.is_dir() {
                 stack.push(path);
-            } else if let Ok(buf) = std::fs::read(&path) {
+                continue;
+            }
+            let sz = entry.metadata().map(|m| m.len()).unwrap_or(0);
+            if sz > MAX_MEMBER_BYTES {
+                continue;
+            }
+            total += sz;
+            if total > MAX_TOTAL_BYTES {
+                e.warnings.push("Archive expands beyond the safe size limit; remaining files skipped.".into());
+                break 'walk;
+            }
+            if let Ok(buf) = std::fs::read(&path) {
                 let member = path
                     .file_name()
                     .map(|s| s.to_string_lossy().to_string())
