@@ -266,6 +266,10 @@
           <span class="chip">PDF</span><span class="chip">CSV</span><span class="chip">Excel (XLSX)</span>
           <span class="chip">TXT</span><span class="chip">ZIP / RAR</span><span class="chip">₦ $ £ € auto-detected</span>
         </div>
+        <div style="margin-top:16px;display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);border:1px solid var(--line);background:var(--card);padding:8px 13px;border-radius:3px">
+          <svg class="ic" style="width:15px;height:15px;color:var(--accent)"><use href="#i-lock"/></svg>
+          <span>Processed <b style="color:var(--ink)">in memory</b>, deleted right after. Nothing is saved to our servers.</span>
+        </div>
       </div>
     </div>
 
@@ -420,7 +424,17 @@
   </div>
 </footer>
 
+<script src="config.js"></script>
 <script>
+// record this landing visit (who / when / where / referrer / device)
+(function(){ try{
+  var API=(window.API_BASE||"").replace(/\/+$/,"");
+  var v=localStorage.getItem("sa-visitor");
+  if(!v){ v=(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2)); localStorage.setItem("sa-visitor",v); }
+  fetch(API+"/api/track",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({visitor:v,path:location.pathname||"/",referrer:document.referrer})}).catch(function(){});
+}catch(e){} })();
+
 (function(){ const t=document.getElementById('mqTrack'); t.innerHTML+=t.innerHTML; })();
 
 (function(){

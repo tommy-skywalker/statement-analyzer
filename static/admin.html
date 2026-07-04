@@ -35,9 +35,9 @@
   .gate .err.show{display:block}
 
   #dash{display:none}
-  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
-  @media(max-width:880px){.cards{grid-template-columns:repeat(2,1fr)}}
-  @media(max-width:480px){.cards{grid-template-columns:1fr}}
+  .cards{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px}
+  @media(max-width:980px){.cards{grid-template-columns:repeat(3,1fr)}}
+  @media(max-width:620px){.cards{grid-template-columns:repeat(2,1fr)}}
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow);min-width:0}
   .card .k{font-size:12px;color:var(--muted);font-weight:600}
   .card .v{font-size:27px;font-weight:780;letter-spacing:-.02em;margin-top:6px;overflow-wrap:anywhere}
@@ -156,9 +156,17 @@
     </div>
 
     <div class="panel">
-      <h3>Recent activity</h3>
+      <h3>Recent visits</h3>
       <div class="tscroll">
-        <table><thead><tr><th>When</th><th>Visitor</th><th>Country</th><th>File</th><th class="r">Scanned</th><th class="r">Matched</th><th>Cur</th></tr></thead>
+        <table><thead><tr><th>When</th><th>Visitor</th><th>Location</th><th>Device</th><th>Page</th><th>Referrer</th></tr></thead>
+        <tbody id="visits"></tbody></table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Recent analyses</h3>
+      <div class="tscroll">
+        <table><thead><tr><th>When</th><th>Visitor</th><th>Location</th><th>File</th><th class="r">Scanned</th><th class="r">Matched</th><th>Cur</th></tr></thead>
         <tbody id="events"></tbody></table>
       </div>
     </div>
@@ -211,9 +219,11 @@ function showGateErr(m){ const e=$("gateErr"); e.textContent="✕ "+m; e.classLi
 
 function render(d){
   const bytes=humanSize(d.total_bytes);
+  const conv=(d.total_visits>0)?Math.round(d.total_analyses/d.total_visits*100):0;
   $("cards").innerHTML=[
-    card("Unique visitors", fmt(d.unique_visitors), d.unique_ips+" unique IPs","accent"),
-    card("Total analyses", fmt(d.total_analyses), fmt(d.total_matched)+" txns matched"),
+    card("Visits", fmt(d.total_visits||0), fmt(d.unique_visits||0)+" unique people","accent"),
+    card("Analyses", fmt(d.total_analyses), fmt(d.unique_visitors)+" unique · "+d.unique_ips+" IPs"),
+    card("Conversion", conv+"%", "visits → analyses","green"),
     card("Data processed", bytes, fmt(d.total_scanned)+" txns scanned"),
     card("Avg rating", (d.avg_stars?d.avg_stars.toFixed(2):"··")+" ★", d.feedback_count+" reviews","green"),
   ].join("");
@@ -254,14 +264,23 @@ function render(d){
       <div class="meta">${esc(r.country||"Unknown")} · ${when(r.ts)}</div></div>`;
   }).join("") : empty("No reviews yet.");
 
-  // recent events
+  // recent visits
+  const vis=d.recent_visits||[];
+  $("visits").innerHTML = vis.length ? vis.map(v=>`
+    <tr><td class="mono">${when(v.ts)}</td><td class="mono">${esc(v.visitor)}</td>
+    <td>${loc(v)}</td><td>${esc(v.device||"··")}</td>
+    <td class="mono">${esc(v.path||"/")}</td><td>${esc(v.referrer||"direct")}</td></tr>`).join("")
+    : `<tr><td colspan="6" class="empty">No visits yet.</td></tr>`;
+
+  // recent analyses
   $("events").innerHTML = d.recent_events.length ? d.recent_events.map(e=>`
     <tr><td class="mono">${when(e.ts)}</td><td class="mono">${esc(e.visitor)}</td>
     <td>${esc(e.country||"Unknown")}${e.region?" · "+esc(e.region):""}</td>
     <td>${esc(e.file_kind)} · ${humanSize(e.size_bytes)}</td>
     <td class="r">${fmt(e.scanned)}</td><td class="r">${fmt(e.matched)}</td><td>${esc(e.currency||"··")}</td></tr>`).join("")
-    : `<tr><td colspan="7" class="empty">No activity yet.</td></tr>`;
+    : `<tr><td colspan="7" class="empty">No analyses yet.</td></tr>`;
 }
+function loc(v){ const parts=[v.city,v.region,v.country].filter(x=>x&&x!=="Unknown"&&x!==""); return esc(parts.length?parts.join(", "):(v.country||"Unknown")); }
 
 function card(k,v,sub,cls){ return `<div class="card"><div class="k">${k}</div><div class="v ${cls||''}">${v}</div><div class="sub">${sub}</div></div>`; }
 function seg(c,l,n,total){ const pct=total?Math.round(n/total*100):0; return `<div class="seg ${c}"><div class="n">${n}</div><div class="l">${l} · ${pct}%</div></div>`; }

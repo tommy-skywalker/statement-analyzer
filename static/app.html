@@ -275,6 +275,10 @@
 
   .file-btn{border-style:solid}
   .heronote{font-size:12px}
+  .privacy{display:inline-flex;align-items:center;gap:7px;margin-top:12px;font-size:12px;color:var(--muted);
+    border:1px solid var(--line);background:var(--card);padding:7px 13px;border-radius:3px}
+  .privacy .svic{width:14px;height:14px;color:var(--accent)}
+  .privacy b{color:var(--ink)}
 
   /* block-bar meters */
   .meters{padding:14px 20px}
@@ -305,6 +309,7 @@
   <symbol id="i-code" viewBox="0 0 24 24"><path d="M8 7l-4 5 4 5M16 7l4 5-4 5"/></symbol>
   <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 4l1.5 4L18 9.5 13.5 11 12 15l-1.5-4L6 9.5 10.5 8z"/></symbol>
   <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4l9 16H3z M12 10v4M12 17.5v.5"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></symbol>
 </svg>
 <div class="app">
   <div class="term-bar">
@@ -339,6 +344,7 @@
       <button class="go-btn" id="analyzeBtn">Analyze</button>
     </div>
     <div class="heronote" id="heronote">PDF · CSV · XLSX · TXT · ZIP/RAR/7z &nbsp;·&nbsp; Smart search understands dates &amp; "spent on / received from" &nbsp;·&nbsp; blank = analyse everything</div>
+    <div class="privacy"><svg class="svic"><use href="#i-lock"/></svg> <span>Your statement is processed <b>in memory</b> and <b>deleted right after</b>. Nothing is saved to our servers.</span></div>
     <input type="file" id="fileInput" hidden
       accept=".pdf,.csv,.tsv,.xlsx,.xls,.xlsm,.ods,.txt,.log,.zip,.rar,.7z,.tar,.gz" />
   </section>
@@ -460,6 +466,12 @@ function visitorId(){
   }
   return v;
 }
+
+// Record this page open (who / when / where / device).
+(function(){ try{
+  fetch(API_BASE+"/api/track",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({visitor:visitorId(),path:"/app",referrer:document.referrer})}).catch(()=>{});
+}catch(e){} })();
 
 /* ---------------- theme ---------------- */
 (function initTheme(){

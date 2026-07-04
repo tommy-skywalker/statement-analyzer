@@ -35,6 +35,21 @@ CREATE TABLE IF NOT EXISTS feedback (
     would_pay TEXT NOT NULL DEFAULT '',
     price     TEXT NOT NULL DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS visits (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts        INTEGER NOT NULL,
+    visitor   TEXT NOT NULL DEFAULT '',
+    ip_hash   TEXT NOT NULL DEFAULT '',
+    country   TEXT NOT NULL DEFAULT 'Unknown',
+    region    TEXT NOT NULL DEFAULT '',
+    city      TEXT NOT NULL DEFAULT '',
+    path      TEXT NOT NULL DEFAULT '',
+    referrer  TEXT NOT NULL DEFAULT '',
+    device    TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_visits_ts ON visits(ts);
+CREATE INDEX IF NOT EXISTS idx_visits_visitor ON visits(visitor);
 "#;
 
 pub struct EventIn {
@@ -48,6 +63,17 @@ pub struct EventIn {
     pub scanned: i64,
     pub matched: i64,
     pub currency: String,
+}
+
+pub struct VisitIn {
+    pub visitor: String,
+    pub ip_hash: String,
+    pub country: String,
+    pub region: String,
+    pub city: String,
+    pub path: String,
+    pub referrer: String,
+    pub device: String,
 }
 
 pub struct FeedbackIn {
@@ -84,15 +110,25 @@ impl Store {
         Ok(Self { write: Mutex::new(write), read: Mutex::new(read) })
     }
 
-    /// Delete events older than `older_than_days`. Returns rows removed.
+    /// Delete events + visits older than `older_than_days`. Returns rows removed.
     pub fn prune(&self, older_than_days: i64) -> i64 {
         if let Ok(conn) = self.write.lock() {
             let cutoff = now_secs() - older_than_days.max(1) * 86_400;
-            return conn
-                .execute("DELETE FROM events WHERE ts < ?1", params![cutoff])
-                .unwrap_or(0) as i64;
+            let a = conn.execute("DELETE FROM events WHERE ts < ?1", params![cutoff]).unwrap_or(0);
+            let b = conn.execute("DELETE FROM visits WHERE ts < ?1", params![cutoff]).unwrap_or(0);
+            return (a + b) as i64;
         }
         0
+    }
+
+    pub fn record_visit(&self, v: &VisitIn) {
+        if let Ok(conn) = self.write.lock() {
+            let _ = conn.execute(
+                "INSERT INTO visits (ts,visitor,ip_hash,country,region,city,path,referrer,device)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+                params![now_secs(), v.visitor, v.ip_hash, v.country, v.region, v.city, v.path, v.referrer, v.device],
+            );
+        }
     }
 
     pub fn record_event(&self, e: &EventIn) {
@@ -181,7 +217,28 @@ impl Store {
                 price: r.get(5)?,
             }));
 
+        // Visits (page opens) — the top of the funnel.
+        let total_visits = scalar_i64("SELECT COUNT(*) FROM visits");
+        let unique_visits = scalar_i64("SELECT COUNT(DISTINCT visitor) FROM visits");
+        let visits_by_country = query_rows(&conn,
+            "SELECT country, COUNT(*) c, COUNT(DISTINCT visitor) v FROM visits GROUP BY country ORDER BY c DESC LIMIT 50",
+            |r| Ok(CountryStat { country: r.get(0)?, count: r.get(1)?, visitors: r.get(2)? }));
+        let recent_visits = query_rows(&conn,
+            "SELECT ts,visitor,country,region,city,path,referrer,device FROM visits ORDER BY id DESC LIMIT 80",
+            |r| Ok(VisitRow {
+                ts: r.get(0)?,
+                visitor: short_visitor(&r.get::<_, String>(1)?),
+                country: r.get(2)?,
+                region: r.get(3)?,
+                city: r.get(4)?,
+                path: r.get(5)?,
+                referrer: r.get(6)?,
+                device: r.get(7)?,
+            }));
+
         Stats {
+            total_visits,
+            unique_visits,
             total_analyses,
             unique_visitors,
             unique_ips,
@@ -189,8 +246,10 @@ impl Store {
             total_scanned,
             total_matched,
             by_country,
+            visits_by_country,
             by_day,
             recent_events,
+            recent_visits,
             feedback_count,
             avg_stars: (avg_stars * 100.0).round() / 100.0,
             pay_yes,
@@ -229,6 +288,8 @@ pub fn now_secs() -> i64 {
 
 #[derive(Default, Serialize)]
 pub struct Stats {
+    pub total_visits: i64,
+    pub unique_visits: i64,
     pub total_analyses: i64,
     pub unique_visitors: i64,
     pub unique_ips: i64,
@@ -236,14 +297,28 @@ pub struct Stats {
     pub total_scanned: i64,
     pub total_matched: i64,
     pub by_country: Vec<CountryStat>,
+    pub visits_by_country: Vec<CountryStat>,
     pub by_day: Vec<DayStat>,
     pub recent_events: Vec<RecentEvent>,
+    pub recent_visits: Vec<VisitRow>,
     pub feedback_count: i64,
     pub avg_stars: f64,
     pub pay_yes: i64,
     pub pay_maybe: i64,
     pub pay_no: i64,
     pub reviews: Vec<Review>,
+}
+
+#[derive(Serialize)]
+pub struct VisitRow {
+    pub ts: i64,
+    pub visitor: String,
+    pub country: String,
+    pub region: String,
+    pub city: String,
+    pub path: String,
+    pub referrer: String,
+    pub device: String,
 }
 
 #[derive(Serialize)]

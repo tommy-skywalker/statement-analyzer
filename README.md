@@ -219,7 +219,9 @@ Liveness probe → `{"status":"ok", ...}`.
 | `RATE_FEEDBACK_PER_MIN` | `5` | per-IP `/api/feedback` requests per minute |
 | `ALLOWED_ORIGINS` | *(unset = permissive)* | comma-separated origins for CORS lockdown, e.g. `https://yourstatementanalyzer.com,https://www.yourstatementanalyzer.com` |
 | `SESSION_TTL_HOURS` | `12` | admin dashboard session lifetime |
-| `EVENTS_RETENTION_DAYS` | `365` | analytics events older than this are pruned (on boot + every 6h) |
+| `EVENTS_RETENTION_DAYS` | `365` | analytics (visits + analyses) older than this are pruned (boot + every 6h) |
+| `CACHE_TTL_MINUTES` | `20` | how long a parsed statement stays in memory for instant re-search before deletion |
+| `RATE_TRACK_PER_MIN` | `40` | per-IP `/api/track` (page-visit) pings per minute |
 
 ---
 
@@ -229,8 +231,13 @@ Liveness probe → `{"status":"ok", ...}`.
 - **Security headers** — `Content-Security-Policy`, `X-Content-Type-Options: nosniff`,
   `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy` on every response.
 - **Upload cap** — `MAX_UPLOAD_MB` (default 200 MB) rejects oversized bodies.
-- **Privacy** — raw IPs are never stored; only a salted SHA-256 hash (for unique-IP counts) plus
-  a coarse country/region. Visitors are identified by a random client-generated id (localStorage).
+- **Privacy** — uploaded statements are processed **in memory only**, never written to disk, and
+  dropped from the in-memory cache after `CACHE_TTL_MINUTES` (default 20). No transaction data is
+  ever persisted. Raw IPs are never stored; only a salted SHA-256 hash (for unique counts) plus a
+  coarse country/region/city. Visitors are identified by a random client-generated id (localStorage).
+- **Analytics** — `/api/track` records a page **visit** (who / when / country-region-city / device /
+  path / referrer) on load, distinct from an **analysis** event. The admin dashboard shows the full
+  funnel: visits → unique people → analyses → conversion, with recent visits and analyses tables.
 - **Admin dashboard** at **`/admin`** — **username + password login** (`ADMIN_USER` / `ADMIN_PASSWORD`).
   `POST /api/admin/login` validates the credentials (rate-limited, 10/min/IP) and returns a session
   token the dashboard uses for `GET /api/admin/stats`. Shows unique visitors, total analyses,

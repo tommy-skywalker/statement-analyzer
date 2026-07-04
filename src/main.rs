@@ -41,6 +41,7 @@ struct AppState {
     analyze_limiter: Arc<RateLimiter>,
     feedback_limiter: Arc<RateLimiter>,
     login_limiter: Arc<RateLimiter>,
+    track_limiter: Arc<RateLimiter>,
     admin_user: Arc<String>,
     admin_password: Arc<String>,
     admin_token: Arc<String>,
@@ -53,18 +54,28 @@ struct AppState {
     session_ttl: std::time::Duration,
 }
 
-/// LRU-ish cache of parsed statements so keyword changes skip re-parsing.
+/// Short-lived, size-capped cache of parsed statements so keyword changes skip
+/// re-parsing. Entries are dropped after `ttl` (privacy: uploaded data never
+/// lingers in memory) and evicted LRU past `cap`.
 struct AnalysisCache {
-    map: HashMap<String, std::sync::Arc<engine::ParsedDoc>>,
+    map: HashMap<String, (std::sync::Arc<engine::ParsedDoc>, std::time::Instant)>,
     order: std::collections::VecDeque<String>,
     cap: usize,
+    ttl: std::time::Duration,
 }
 impl AnalysisCache {
-    fn new(cap: usize) -> Self {
-        AnalysisCache { map: HashMap::new(), order: std::collections::VecDeque::new(), cap }
+    fn new(cap: usize, ttl: std::time::Duration) -> Self {
+        AnalysisCache { map: HashMap::new(), order: std::collections::VecDeque::new(), cap, ttl }
+    }
+    fn purge_expired(&mut self) {
+        let now = std::time::Instant::now();
+        let ttl = self.ttl;
+        self.map.retain(|_, (_, t)| now.duration_since(*t) < ttl);
+        self.order.retain(|id| self.map.contains_key(id));
     }
     fn insert(&mut self, id: String, doc: std::sync::Arc<engine::ParsedDoc>) {
-        self.map.insert(id.clone(), doc);
+        self.purge_expired();
+        self.map.insert(id.clone(), (doc, std::time::Instant::now()));
         self.order.push_back(id);
         while self.order.len() > self.cap {
             if let Some(old) = self.order.pop_front() {
@@ -72,8 +83,9 @@ impl AnalysisCache {
             }
         }
     }
-    fn get(&self, id: &str) -> Option<std::sync::Arc<engine::ParsedDoc>> {
-        self.map.get(id).cloned()
+    fn get(&mut self, id: &str) -> Option<std::sync::Arc<engine::ParsedDoc>> {
+        self.purge_expired();
+        self.map.get(id).map(|(d, _)| d.clone())
     }
 }
 
@@ -110,12 +122,16 @@ async fn main() {
         analyze_limiter: Arc::new(RateLimiter::new(a_max, 60)),
         feedback_limiter: Arc::new(RateLimiter::new(f_max, 60)),
         login_limiter: Arc::new(RateLimiter::new(10, 60)),
+        track_limiter: Arc::new(RateLimiter::new(env_u32("RATE_TRACK_PER_MIN", 40), 60)),
         admin_user: Arc::new(admin_user),
         admin_password: Arc::new(admin_password),
         admin_token: Arc::new(admin_token),
         ip_salt: Arc::new(ip_salt),
         geo_cache: Arc::new(Mutex::new(HashMap::new())),
-        analysis_cache: Arc::new(Mutex::new(AnalysisCache::new(32))),
+        analysis_cache: Arc::new(Mutex::new(AnalysisCache::new(
+            32,
+            std::time::Duration::from_secs(env_u32("CACHE_TTL_MINUTES", 20) as u64 * 60),
+        ))),
         admin_sessions: Arc::new(Mutex::new(HashMap::new())),
         session_ttl: std::time::Duration::from_secs(env_u32("SESSION_TTL_HOURS", 12) as u64 * 3600),
     };
@@ -165,6 +181,7 @@ async fn main() {
         .route("/og.png", get(og_image))
         .route("/health", get(health))
         .route("/api/analyze", post(analyze))
+        .route("/api/track", post(track))
         .route("/api/feedback", post(feedback))
         .route("/api/admin/login", post(admin_login))
         .route("/api/admin/stats", get(admin_stats))
@@ -300,7 +317,7 @@ async fn analyze(
 
     // ---- Fast path: re-filter a previously parsed doc (keyword change) ----
     if file_bytes.as_ref().map(|b| b.is_empty()).unwrap_or(true) && !cache_id.is_empty() {
-        let cached = st.analysis_cache.lock().ok().and_then(|c| c.get(&cache_id));
+        let cached = st.analysis_cache.lock().ok().and_then(|mut c| c.get(&cache_id));
         match cached {
             Some(doc) => {
                 let q = query.clone();
@@ -415,6 +432,60 @@ struct FeedbackBody {
     review: Option<String>,
     would_pay: Option<String>,
     price: Option<String>,
+}
+
+// ----------------------------- visit tracking -----------------------------
+
+#[derive(Deserialize)]
+struct TrackBody {
+    visitor: Option<String>,
+    path: Option<String>,
+    referrer: Option<String>,
+}
+
+/// Record a page visit (who / when / where / device / referrer). Fired on load.
+async fn track(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Json(body): Json<TrackBody>,
+) -> Response {
+    let ip = security::client_ip(&headers, Some(peer));
+    if !st.track_limiter.check(&ip) {
+        return StatusCode::NO_CONTENT.into_response();
+    }
+    let visitor = sanitize_visitor(&body.visitor.unwrap_or_default());
+    let path = clip(&body.path.unwrap_or_default(), 80);
+    let referrer = clip(&referrer_host(&body.referrer.unwrap_or_default()), 120);
+    let device = security::device_from_ua(headers.get("user-agent").and_then(|v| v.to_str().ok()));
+    let ip_hash = security::hash_ip(&ip, &st.ip_salt);
+
+    let st2 = st.clone();
+    let headers2 = headers.clone();
+    tokio::spawn(async move {
+        let geo = resolve_geo(&st2, &headers2, &ip).await;
+        st2.store.record_visit(&store::VisitIn {
+            visitor,
+            ip_hash,
+            country: geo.country,
+            region: geo.region,
+            city: geo.city,
+            path,
+            referrer,
+            device,
+        });
+    });
+    StatusCode::NO_CONTENT.into_response()
+}
+
+/// Reduce a referrer URL to its host (e.g. "https://t.co/x" -> "t.co").
+fn referrer_host(r: &str) -> String {
+    let r = r.trim();
+    if r.is_empty() {
+        return "direct".into();
+    }
+    let no_scheme = r.split("://").nth(1).unwrap_or(r);
+    no_scheme.split(['/', '?']).next().unwrap_or(no_scheme).trim_start_matches("www.").to_string()
 }
 
 async fn feedback(

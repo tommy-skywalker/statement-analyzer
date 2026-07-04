@@ -75,6 +75,36 @@ pub fn country_from_headers(headers: &HeaderMap) -> Option<String> {
     None
 }
 
+/// Compact device label from a User-Agent string, e.g. "Mobile · Chrome".
+pub fn device_from_ua(ua: Option<&str>) -> String {
+    let ua = match ua {
+        Some(s) => s,
+        None => return "Unknown".into(),
+    };
+    let l = ua.to_lowercase();
+    let kind = if l.contains("ipad") || l.contains("tablet") {
+        "Tablet"
+    } else if l.contains("mobi") || l.contains("iphone") || l.contains("android") {
+        "Mobile"
+    } else {
+        "Desktop"
+    };
+    let browser = if l.contains("edg/") || l.contains("edga") {
+        "Edge"
+    } else if l.contains("opr/") || l.contains("opera") {
+        "Opera"
+    } else if l.contains("firefox") {
+        "Firefox"
+    } else if l.contains("chrome") || l.contains("crios") {
+        "Chrome"
+    } else if l.contains("safari") {
+        "Safari"
+    } else {
+        "Other"
+    };
+    format!("{kind} · {browser}")
+}
+
 /// Salted, truncated SHA-256 of an IP — never store raw IPs.
 pub fn hash_ip(ip: &str, salt: &str) -> String {
     let mut h = Sha256::new();
