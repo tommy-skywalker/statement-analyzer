@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /$
+Allow: /app
+Disallow: /admin
+Disallow: /api/
+
+Sitemap: https://yourstatementanalyzer.com/sitemap.xml

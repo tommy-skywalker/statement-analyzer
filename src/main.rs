@@ -179,6 +179,8 @@ async fn main() {
         .route("/config.js", get(config_js))
         .route("/favicon.svg", get(favicon))
         .route("/og.png", get(og_image))
+        .route("/robots.txt", get(robots))
+        .route("/sitemap.xml", get(sitemap))
         .route("/health", get(health))
         .route("/api/analyze", post(analyze))
         .route("/api/track", post(track))
@@ -230,6 +232,20 @@ async fn og_image() -> impl IntoResponse {
     (
         [(axum::http::header::CONTENT_TYPE, "image/png")],
         include_bytes!("../static/og.png").as_slice(),
+    )
+}
+
+async fn robots() -> impl IntoResponse {
+    (
+        [(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        include_str!("../static/robots.txt"),
+    )
+}
+
+async fn sitemap() -> impl IntoResponse {
+    (
+        [(axum::http::header::CONTENT_TYPE, "application/xml; charset=utf-8")],
+        include_str!("../static/sitemap.xml"),
     )
 }
 
