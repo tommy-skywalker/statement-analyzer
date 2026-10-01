@@ -19,6 +19,9 @@ pub struct QueryFilter {
     pub amount_max: Option<f64>,
     /// Optional anchor: "… after I paid ndo 30k" / "… before I sent X".
     pub anchor: Option<Anchor>,
+    /// Time-of-day windows (hour ranges, inclusive) from "at night", "in the morning", etc.
+    /// Empty = any time. Transactions without a clock time are never excluded by this.
+    pub hours: Vec<(u32, u32)>,
     pub human: String,
     /// True if we detected a date, direction, amount band or anchor.
     pub smart: bool,
@@ -39,6 +42,8 @@ pub struct Anchor {
     /// "few hours / shortly / right after" = 6, "that night / next morning" = 18,
     /// "within 12 hours" = 12, otherwise 12.
     pub window_hours: i64,
+    /// Pin the anchor to a specific day ("…after I paid ndo 30k ON 25 MARCH").
+    pub on_date: Option<NaiveDate>,
 }
 
 const DEBIT_VERBS: &[&str] = &[
@@ -96,6 +101,70 @@ static WINDOW_LONG: Lazy<Regex> = Lazy::new(|| {
 static WINDOW_SHORT: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"\b(few|couple|shortly|right|immediately|just|minutes?|mins?|straight)\b").unwrap());
 
+static DATE_DM: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)(?:\s+(\d{4}))?\b").unwrap()
+});
+static DATE_MD: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?\b").unwrap()
+});
+static DATE_NUM: Lazy<Regex> = Lazy::new(|| Regex::new(r"\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b").unwrap());
+
+fn month_num(name: &str) -> Option<u32> {
+    MONTHS.iter().find(|(n, _)| *n == name).map(|(_, m)| *m)
+}
+
+/// A specific calendar day: "25 march", "march 25th", "25/3", "25-03-2026".
+/// Year defaults to the current one when omitted.
+fn detect_specific_date(s: &str, today: NaiveDate) -> Option<NaiveDate> {
+    let year_or = |y: Option<regex::Match>| -> i32 {
+        y.and_then(|m| m.as_str().parse::<i32>().ok())
+            .map(|v| if v < 100 { 2000 + v } else { v })
+            .unwrap_or(today.year())
+    };
+    if let Some(c) = DATE_DM.captures(s) {
+        let d: u32 = c[1].parse().ok()?;
+        let m = month_num(&c[2])?;
+        return NaiveDate::from_ymd_opt(year_or(c.get(3)), m, d);
+    }
+    if let Some(c) = DATE_MD.captures(s) {
+        let m = month_num(&c[1])?;
+        let d: u32 = c[2].parse().ok()?;
+        return NaiveDate::from_ymd_opt(year_or(c.get(3)), m, d);
+    }
+    if let Some(c) = DATE_NUM.captures(s) {
+        // Day-first (25/3). Only accept when it can't be an amount or a time.
+        let d: u32 = c[1].parse().ok()?;
+        let m: u32 = c[2].parse().ok()?;
+        if (1..=31).contains(&d) && (1..=12).contains(&m) {
+            return NaiveDate::from_ymd_opt(year_or(c.get(3)), m, d);
+        }
+    }
+    None
+}
+
+/// Time-of-day windows mentioned in the query (union of all mentioned).
+fn detect_time_of_day(s: &str) -> Vec<(u32, u32)> {
+    let mut v: Vec<(u32, u32)> = Vec::new();
+    let has = |w: &str| contains_word(s, w);
+    if has("night") || has("nights") || has("overnight") || has("midnight") || has("tonight") {
+        v.push((20, 23));
+        v.push((0, 5));
+    }
+    if s.contains("early morning") || has("dawn") {
+        v.push((3, 8));
+    }
+    if has("morning") {
+        v.push((5, 11));
+    }
+    if has("afternoon") || has("noon") {
+        v.push((12, 16));
+    }
+    if has("evening") {
+        v.push((17, 20));
+    }
+    v
+}
+
 /// How wide the anchor window is, from how the user phrased it.
 fn detect_window_hours(l: &str) -> i64 {
     if let Some(c) = WINDOW_N.captures(l) {
@@ -151,10 +220,14 @@ pub fn parse(query: &str, today: NaiveDate) -> QueryFilter {
                 after: word == "after",
                 around: is_around,
                 window_hours: detect_window_hours(&lower),
+                on_date: detect_specific_date(clause, today),
             });
             target = lower[..m.start()].trim().to_string();
         }
     }
+
+    // Time of day ("in the night", "early morning") applies to the target.
+    let hours = detect_time_of_day(&target);
 
     // 1) Direction (from the target; fall back to the whole query)
     let direction = detect_direction(&target).or_else(|| detect_direction(&lower));
@@ -178,11 +251,16 @@ pub fn parse(query: &str, today: NaiveDate) -> QueryFilter {
     // 4) Keyword (strip fillers, time words, verbs, months, numbers)
     let keyword = extract_keyword(&target);
 
-    let smart = date_from.is_some() || direction.is_some() || amount_min.is_some() || amount_max.is_some() || anchor.is_some();
+    let smart = date_from.is_some()
+        || direction.is_some()
+        || amount_min.is_some()
+        || amount_max.is_some()
+        || anchor.is_some()
+        || !hours.is_empty();
 
-    let human = build_human(&keyword, direction, &date_label, amount_min, amount_max, anchor.as_ref());
+    let human = build_human(&keyword, direction, &date_label, amount_min, amount_max, anchor.as_ref(), &hours);
 
-    QueryFilter { keyword, date_from, date_to, direction, amount_min, amount_max, anchor, human, smart }
+    QueryFilter { keyword, date_from, date_to, direction, amount_min, amount_max, anchor, hours, human, smart }
 }
 
 fn money_val(num: &str, suffix: Option<&str>) -> Option<f64> {
@@ -245,6 +323,10 @@ fn detect_direction(l: &str) -> Option<Direction> {
 }
 
 fn detect_range(l: &str, today: NaiveDate) -> (Option<NaiveDate>, Option<NaiveDate>, String) {
+    // A specific day beats everything: "on 25 march", "march 25th", "25/3".
+    if let Some(d) = detect_specific_date(l, today) {
+        return (Some(d), Some(d), d.format("%-d %B %Y").to_string());
+    }
     // "last/past N days|weeks|months|years"
     if let Some(cap) = LAST_N.captures(l) {
         let n: i64 = cap[1].parse().unwrap_or(1);
@@ -354,6 +436,7 @@ fn build_human(
     amount_min: Option<f64>,
     amount_max: Option<f64>,
     anchor: Option<&Anchor>,
+    hours: &[(u32, u32)],
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
     match dir {
@@ -363,6 +446,10 @@ fn build_human(
     }
     if !keyword.is_empty() {
         parts.push(format!("“{keyword}”"));
+    }
+    if !hours.is_empty() {
+        let lbl: Vec<String> = hours.iter().map(|(a, b)| format!("{a:02}:00-{b:02}:59")).collect();
+        parts.push(format!("· {}", lbl.join(" or ")));
     }
     match (amount_min, amount_max) {
         (Some(a), Some(b)) => parts.push(format!("· {} to {}", fmt_amt(a), fmt_amt(b))),
@@ -385,6 +472,9 @@ fn build_human(
             what.push_str(&format!("({})", fmt_amt(v)));
         }
         let rel = if a.around { "either side of" } else if a.after { "after" } else { "before" };
+        if let Some(d) = a.on_date {
+            what.push_str(&format!(" on {}", d.format("%-d %b")));
+        }
         parts.push(format!("· within {}h {} the {} payment", a.window_hours, rel, what));
     }
     if parts.is_empty() {

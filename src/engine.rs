@@ -120,6 +120,7 @@ pub fn analyze_parsed(doc: &ParsedDoc, query: &str) -> AnalysisResult {
         let akw = a.keyword.to_lowercase();
         let found = txns.iter().find(|t| {
             t.date.is_some()
+                && a.on_date.map_or(true, |d| t.date == Some(d))
                 && tokens_any_match(&t.description, &t.raw, &akw)
                 && a.amount.map_or(true, |v| (t.amount - v).abs() <= (v * 0.02).max(50.0))
         });
@@ -194,7 +195,13 @@ pub fn analyze_parsed(doc: &ParsedDoc, query: &str) -> AnalysisResult {
             };
             let dir_ok = f.direction.map_or(true, |dir| t.direction == dir);
             let amt_ok = f.amount_min.map_or(true, |lo| t.amount >= lo) && f.amount_max.map_or(true, |hi| t.amount <= hi);
-            kw_ok && date_ok && dir_ok && amt_ok && in_window(t)
+            // Time of day ("in the night"): only applied when the transaction has a clock time.
+            let tod_ok = f.hours.is_empty()
+                || t.time.map_or(true, |tm| {
+                    let h = chrono::Timelike::hour(&tm);
+                    f.hours.iter().any(|(a, b)| h >= *a && h <= *b)
+                });
+            kw_ok && date_ok && dir_ok && amt_ok && tod_ok && in_window(t)
         })
         .collect();
     let interpreted = Interpreted {
@@ -992,6 +999,29 @@ mod tests {
         // plain keyword search is unaffected by the new parsing
         let r = run("t.csv", csv.as_bytes(), "adebayo");
         assert_eq!(r.summary.matched_transactions, 1);
+    }
+
+    /// "money I sent in the night after I paid ndo 30k on 5 march, 25k-45k":
+    /// anchor pinned to a specific day, 18h "night" window crossing midnight,
+    /// time-of-day filter keeps the 02:10 transfer and drops the 06:45 one.
+    #[test]
+    fn anchored_query_specific_day_and_time_of_day() {
+        let csv = "Trans. Date,Value Date,Description,Debit(₦),Credit(₦),Balance After(₦)\n\
+            01 Mar 2026 10:00:00,01 Mar 2026,Transfer to NDO HOTELS LTD | Access Bank,30000.00,--,300000.00\n\
+            01 Mar 2026 22:00:00,01 Mar 2026,Transfer to SOMEONE ELSE | OPay,30000.00,--,270000.00\n\
+            05 Mar 2026 21:40:10,05 Mar 2026,Transfer to NDO HOTELS LTD | Access Bank,30000.00,--,170000.00\n\
+            06 Mar 2026 02:10:33,06 Mar 2026,Transfer to FOLASHADE ADEYEMI | OPay,40000.00,--,121500.00\n\
+            06 Mar 2026 06:45:12,06 Mar 2026,Transfer to ADEBAYO OLUWASEUN | GTBank,35000.00,--,86500.00\n";
+        let r = run("t.csv", csv.as_bytes(), "money i sent in the night after i paid ndo 30k on 5 march, 25k-45k");
+        assert_eq!(r.summary.matched_transactions, 1, "{:?}", r.matched.iter().map(|m| &m.description).collect::<Vec<_>>());
+        assert!(r.matched[0].description.contains("FOLASHADE"));
+        assert_eq!(r.matched[0].time.as_deref(), Some("02:10"));
+        // the 1 March Ndo payment must NOT have been chosen as the anchor
+        assert!(r.warnings.iter().any(|w| w.contains("2026-03-05")));
+
+        // a plain specific-day query works on its own too
+        let r = run("t.csv", csv.as_bytes(), "what did i send on 1 march");
+        assert_eq!(r.summary.matched_transactions, 2);
     }
 
     #[test]
