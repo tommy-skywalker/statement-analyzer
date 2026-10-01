@@ -1,9 +1,24 @@
 //! Deterministic parsing helpers for money amounts and dates.
 //! No AI, no locale guessing beyond well-defined heuristics.
 
-use chrono::NaiveDate;
+use chrono::{NaiveDate, NaiveTime};
 use once_cell::sync::Lazy;
 use regex::Regex;
+
+static TIME_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\b(\d{1,2}):(\d{2})(?::(\d{2}))?\b").unwrap());
+
+/// Find the first clock time (HH:MM or HH:MM:SS) in a line.
+pub fn find_time_in_line(line: &str) -> Option<NaiveTime> {
+    let c = TIME_RE.captures(line)?;
+    let h: u32 = c.get(1)?.as_str().parse().ok()?;
+    let m: u32 = c.get(2)?.as_str().parse().ok()?;
+    let s: u32 = c.get(3).and_then(|x| x.as_str().parse().ok()).unwrap_or(0);
+    if h < 24 && m < 60 && s < 60 {
+        NaiveTime::from_hms_opt(h, m, s)
+    } else {
+        None
+    }
+}
 
 /// A parsed monetary value. `value` is signed (negative = outflow hint),
 /// `magnitude` is always the absolute amount.

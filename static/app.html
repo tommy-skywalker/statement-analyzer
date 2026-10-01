@@ -347,7 +347,7 @@
     <p>&gt; Drop a statement, enter a query, get an instant debit/credit breakdown.</p>
     <div class="searchbar">
       <button class="file-btn" id="fileBtn"><svg class="svic"><use href="#i-upload"/></svg> Choose file</button>
-      <input class="search-input" id="query" placeholder='Ask in plain English, e.g. "how much did I spend on chicken last month"' autocomplete="off" />
+      <input class="search-input" id="query" placeholder='Ask naturally: "chicken last month" or "20k-45k I sent a few hours after I paid ndo hotel 30k"' autocomplete="off" />
       <button class="go-btn" id="analyzeBtn">Analyze</button>
     </div>
     <div class="heronote" id="heronote">PDF · CSV · XLSX · TXT · ZIP/RAR/7z &nbsp;·&nbsp; Smart search understands dates &amp; "spent on / received from" &nbsp;·&nbsp; blank = analyse everything</div>
@@ -587,7 +587,7 @@ function render(d){
   $("txCount").textContent = tx.length ? `${tx.length}${d.matched_truncated?" (capped)":""} shown` : "";
   $("txBody").innerHTML = tx.length ? tx.map(t=>`
     <tr>
-      <td class="date">${t.date?escapeHtml(t.date):"··"}</td>
+      <td class="date">${t.date?escapeHtml(t.date):"··"}${t.time?' <span class="muted" style="font-weight:500">'+escapeHtml(t.time)+'</span>':''}</td>
       <td class="desc" title="${escapeHtml(t.description)}">${escapeHtml(t.description)}</td>
       <td class="src" title="${escapeHtml(t.source)}">${escapeHtml(sourceShort(t.source))}</td>
       <td><span class="pill ${t.direction}"><span class="dot"></span>${cap(t.direction)}</span></td>

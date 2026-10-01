@@ -1,6 +1,6 @@
 //! Internal transaction model and the JSON output schema.
 
-use chrono::NaiveDate;
+use chrono::{NaiveDate, NaiveTime};
 use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -14,6 +14,7 @@ pub enum Direction {
 #[derive(Debug, Clone)]
 pub struct Transaction {
     pub date: Option<NaiveDate>,
+    pub time: Option<NaiveTime>,
     pub description: String,
     pub amount: f64, // magnitude, always positive
     pub direction: Direction,
@@ -51,6 +52,7 @@ pub struct SideStats {
 #[derive(Debug, Serialize)]
 pub struct MatchedTxn {
     pub date: Option<String>,
+    pub time: Option<String>,
     pub description: String,
     pub amount: f64,
     pub direction: Direction,

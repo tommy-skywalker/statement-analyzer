@@ -14,9 +14,25 @@ pub struct QueryFilter {
     pub date_from: Option<NaiveDate>,
     pub date_to: Option<NaiveDate>,
     pub direction: Option<Direction>,
+    /// Optional amount band, e.g. "20k-45k", "over 10k", "around 30k".
+    pub amount_min: Option<f64>,
+    pub amount_max: Option<f64>,
+    /// Optional anchor: "… after I paid ndo 30k" / "… before I sent X".
+    pub anchor: Option<Anchor>,
     pub human: String,
-    /// True if we detected a date or direction (i.e. richer than a plain keyword).
+    /// True if we detected a date, direction, amount band or anchor.
     pub smart: bool,
+}
+
+/// Another transaction the query is relative to ("a few hours AFTER I paid Ndo 30k").
+#[derive(Debug, Clone)]
+pub struct Anchor {
+    /// Distinctive words identifying the anchor transaction (e.g. "ndo").
+    pub keyword: String,
+    /// Amount of the anchor transaction, if stated (e.g. 30000 for "30k").
+    pub amount: Option<f64>,
+    /// true = look AFTER the anchor, false = BEFORE it.
+    pub after: bool,
 }
 
 const DEBIT_VERBS: &[&str] = &[
@@ -39,6 +55,15 @@ const STOPWORDS: &[&str] = &[
     "deposited", "cost", "last", "this", "past", "next", "ago", "between", "over", "during",
     "since", "day", "days", "week", "weeks", "month", "months", "year", "years", "today",
     "yesterday", "recent", "recently", "from", "into", "out",
+    // relative / anchor phrasing
+    "transfer", "transfers", "transferred", "made", "make", "few", "couple", "hour", "hours",
+    "minute", "minutes", "mins", "right", "shortly", "later", "earlier", "after", "before",
+    "around", "about", "approximately", "roughly", "under", "below", "above", "more", "less",
+    "than", "least", "most", "up", "called", "named", "someone", "somebody", "person", "guy",
+    "girl", "her", "him", "his", "she", "he", "them", "they", "it", "name", "fee", "fees",
+    "yoruba", "igbo", "hausa", "naira", "ngn",
+    // question words
+    "what", "which", "who", "whom", "whose", "where", "when", "why", "whats", "did",
 ];
 
 const MONTHS: &[(&str, u32)] = &[
@@ -51,6 +76,21 @@ const MONTHS: &[(&str, u32)] = &[
 static LAST_N: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?:last|past)\s+(\d+)\s+(day|week|month|year)s?").unwrap());
 
+static ANCHOR_SPLIT: Lazy<Regex> = Lazy::new(|| Regex::new(r"\b(after|before)\b").unwrap());
+static AMT_RANGE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(\d+(?:[.,]\d+)*)\s*(k|m)?\s*(?:-|–|to|and)\s*(\d+(?:[.,]\d+)*)\s*(k|m)?\b").unwrap()
+});
+static AMT_OVER: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?:over|above|more than|at least|from)\s+(\d+(?:[.,]\d+)*)\s*(k|m)?\b").unwrap()
+});
+static AMT_UNDER: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?:under|below|less than|at most|up to)\s+(\d+(?:[.,]\d+)*)\s*(k|m)?\b").unwrap()
+});
+static AMT_AROUND: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?:around|about|approximately|roughly|~)\s*(\d+(?:[.,]\d+)*)\s*(k|m)?\b").unwrap()
+});
+static AMT_ANY: Lazy<Regex> = Lazy::new(|| Regex::new(r"(\d+(?:[.,]\d+)*)\s*(k|m)\b|(\d{1,3}(?:,\d{3})+|\d{4,})").unwrap());
+
 pub fn parse(query: &str, today: NaiveDate) -> QueryFilter {
     let raw = query.trim();
     if raw.is_empty() {
@@ -58,20 +98,79 @@ pub fn parse(query: &str, today: NaiveDate) -> QueryFilter {
     }
     let lower = raw.to_lowercase();
 
-    // 1) Direction
-    let direction = detect_direction(&lower);
+    // 0) Anchor split: "<target> after|before <anchor clause>".
+    //    Only treated as an anchor if the clause names something (a keyword or amount).
+    let mut target = lower.clone();
+    let mut anchor: Option<Anchor> = None;
+    if let Some(m) = ANCHOR_SPLIT.find_iter(&lower).last() {
+        let clause = lower[m.end()..].trim();
+        let a_amount = first_amount(clause);
+        let a_keyword = extract_keyword(clause);
+        if !a_keyword.is_empty() || a_amount.is_some() {
+            anchor = Some(Anchor { keyword: a_keyword, amount: a_amount, after: m.as_str() == "after" });
+            target = lower[..m.start()].trim().to_string();
+        }
+    }
 
-    // 2) Date range
-    let (date_from, date_to, date_label) = detect_range(&lower, today);
+    // 1) Direction (from the target; fall back to the whole query)
+    let direction = detect_direction(&target).or_else(|| detect_direction(&lower));
 
-    // 3) Keyword (strip fillers, time words, direction verbs, months, numbers)
-    let keyword = extract_keyword(&lower);
+    // 2) Date range (from the target)
+    let (date_from, date_to, date_label) = detect_range(&target, today);
 
-    let smart = date_from.is_some() || direction.is_some();
+    // 3) Amount band (from the target)
+    let (amount_min, amount_max) = detect_amount_band(&target);
 
-    let human = build_human(&keyword, direction, &date_label);
+    // 4) Keyword (strip fillers, time words, verbs, months, numbers)
+    let keyword = extract_keyword(&target);
 
-    QueryFilter { keyword, date_from, date_to, direction, human, smart }
+    let smart = date_from.is_some() || direction.is_some() || amount_min.is_some() || amount_max.is_some() || anchor.is_some();
+
+    let human = build_human(&keyword, direction, &date_label, amount_min, amount_max, anchor.as_ref());
+
+    QueryFilter { keyword, date_from, date_to, direction, amount_min, amount_max, anchor, human, smart }
+}
+
+fn money_val(num: &str, suffix: Option<&str>) -> Option<f64> {
+    let n: f64 = num.replace(',', "").parse().ok()?;
+    Some(match suffix {
+        Some("k") => n * 1_000.0,
+        Some("m") => n * 1_000_000.0,
+        _ => n,
+    })
+}
+
+/// First amount in a clause: "30k", "1.5m", "20,000", or a bare number of 4+ digits.
+fn first_amount(s: &str) -> Option<f64> {
+    let c = AMT_ANY.captures(s)?;
+    if let Some(n) = c.get(1) {
+        money_val(n.as_str(), c.get(2).map(|m| m.as_str()))
+    } else {
+        money_val(c.get(3)?.as_str(), None)
+    }
+}
+
+/// "20k-45k" / "between 20k and 45k" / "over 10k" / "under 5k" / "around 30k".
+fn detect_amount_band(s: &str) -> (Option<f64>, Option<f64>) {
+    if let Some(c) = AMT_RANGE.captures(s) {
+        let lo_suf = c.get(2).map(|m| m.as_str()).or_else(|| c.get(4).map(|m| m.as_str()));
+        let lo = money_val(&c[1], lo_suf);
+        let hi = money_val(&c[3], c.get(4).map(|m| m.as_str()));
+        if let (Some(a), Some(b)) = (lo, hi) {
+            return (Some(a.min(b)), Some(a.max(b)));
+        }
+    }
+    let mut lo = AMT_OVER.captures(s).and_then(|c| money_val(&c[1], c.get(2).map(|m| m.as_str())));
+    let mut hi = AMT_UNDER.captures(s).and_then(|c| money_val(&c[1], c.get(2).map(|m| m.as_str())));
+    if lo.is_none() && hi.is_none() {
+        if let Some(c) = AMT_AROUND.captures(s) {
+            if let Some(v) = money_val(&c[1], c.get(2).map(|m| m.as_str())) {
+                lo = Some(v * 0.85);
+                hi = Some(v * 1.15);
+            }
+        }
+    }
+    (lo, hi)
 }
 
 fn detect_direction(l: &str) -> Option<Direction> {
@@ -166,19 +265,42 @@ fn extract_keyword(l: &str) -> String {
         .map(|c| if c.is_alphanumeric() || c == ' ' || c == '\'' || c == '-' { c } else { ' ' })
         .collect();
     let month_names: Vec<&str> = MONTHS.iter().map(|(n, _)| *n).collect();
+    // Number-like tokens: 30, 30k, 1.5m, 20,000, 20k-45k, 45k.
+    let numberish = |w: &str| {
+        w.chars().any(|c| c.is_ascii_digit())
+            && w.chars().all(|c| c.is_ascii_digit() || matches!(c, '.' | ',' | '-' | 'k' | 'm'))
+    };
     let tokens: Vec<&str> = cleaned
         .split_whitespace()
         .filter(|w| {
             let w = *w;
-            !STOPWORDS.contains(&w)
-                && !month_names.contains(&w)
-                && !w.chars().all(|c| c.is_ascii_digit())
+            !STOPWORDS.contains(&w) && !month_names.contains(&w) && !numberish(w)
         })
         .collect();
     tokens.join(" ").trim().to_string()
 }
 
-fn build_human(keyword: &str, dir: Option<Direction>, date_label: &str) -> String {
+fn fmt_amt(v: f64) -> String {
+    let whole = v.round() as i64;
+    let s = whole.abs().to_string();
+    let mut out = String::new();
+    for (i, ch) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    if whole < 0 { format!("-{out}") } else { out }
+}
+
+fn build_human(
+    keyword: &str,
+    dir: Option<Direction>,
+    date_label: &str,
+    amount_min: Option<f64>,
+    amount_max: Option<f64>,
+    anchor: Option<&Anchor>,
+) -> String {
     let mut parts: Vec<String> = Vec::new();
     match dir {
         Some(Direction::Debit) => parts.push("money out".into()),
@@ -188,8 +310,31 @@ fn build_human(keyword: &str, dir: Option<Direction>, date_label: &str) -> Strin
     if !keyword.is_empty() {
         parts.push(format!("“{keyword}”"));
     }
+    match (amount_min, amount_max) {
+        (Some(a), Some(b)) => parts.push(format!("· {} to {}", fmt_amt(a), fmt_amt(b))),
+        (Some(a), None) => parts.push(format!("· over {}", fmt_amt(a))),
+        (None, Some(b)) => parts.push(format!("· under {}", fmt_amt(b))),
+        _ => {}
+    }
     if !date_label.is_empty() {
         parts.push(format!("· {date_label}"));
+    }
+    if let Some(a) = anchor {
+        let mut what = String::new();
+        if !a.keyword.is_empty() {
+            what.push_str(&format!("“{}”", a.keyword));
+        }
+        if let Some(v) = a.amount {
+            if !what.is_empty() {
+                what.push(' ');
+            }
+            what.push_str(&format!("({})", fmt_amt(v)));
+        }
+        parts.push(format!(
+            "· within hours {} the {} payment",
+            if a.after { "after" } else { "before" },
+            what
+        ));
     }
     if parts.is_empty() {
         "all transactions".into()

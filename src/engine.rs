@@ -105,10 +105,68 @@ pub fn analyze_parsed(doc: &ParsedDoc, query: &str) -> AnalysisResult {
     let today = chrono::Utc::now().date_naive();
     let f = crate::nlquery::parse(query, today);
     let kw = f.keyword.to_lowercase();
-    let no_filter = kw.is_empty() && f.date_from.is_none() && f.direction.is_none();
+    let no_filter = kw.is_empty()
+        && f.date_from.is_none()
+        && f.direction.is_none()
+        && f.amount_min.is_none()
+        && f.amount_max.is_none()
+        && f.anchor.is_none();
     if no_filter {
-        warnings.push("No search term provided — analysing ALL transactions.".into());
+        warnings.push("No search term provided, analysing ALL transactions.".into());
     }
+
+    // Resolve the anchor ("… after I paid ndo 30k") to one concrete transaction.
+    const ANCHOR_WINDOW_HOURS: i64 = 6;
+    let anchor_txn: Option<&Transaction> = f.anchor.as_ref().and_then(|a| {
+        let akw = a.keyword.to_lowercase();
+        let found = txns.iter().find(|t| {
+            t.date.is_some()
+                && tokens_any_match(&t.description, &t.raw, &akw)
+                && a.amount.map_or(true, |v| (t.amount - v).abs() <= (v * 0.02).max(50.0))
+        });
+        if found.is_none() {
+            warnings.push(format!(
+                "Couldn't find the anchor transaction ({}{}). Showing results without it.",
+                if a.keyword.is_empty() { "any".to_string() } else { format!("“{}”", a.keyword) },
+                a.amount.map(|v| format!(", {}", fmt_money(&currency.symbol, v))).unwrap_or_default()
+            ));
+        }
+        found
+    });
+    if let (Some(a), Some(t)) = (f.anchor.as_ref(), anchor_txn) {
+        warnings.push(format!(
+            "Anchored {} “{}” on {}{} ({}). Showing transactions within {} hours.",
+            if a.after { "after" } else { "before" },
+            truncate(&t.description, 60),
+            t.date.map(|d| d.to_string()).unwrap_or_default(),
+            t.time.map(|tm| format!(" {}", tm.format("%H:%M"))).unwrap_or_default(),
+            fmt_money(&currency.symbol, t.amount),
+            ANCHOR_WINDOW_HOURS
+        ));
+    }
+
+    let in_window = |t: &Transaction| -> bool {
+        let (a, anc) = match (f.anchor.as_ref(), anchor_txn) {
+            (Some(a), Some(anc)) => (a, anc),
+            _ => return true,
+        };
+        if std::ptr::eq(t, anc) {
+            return false; // never return the anchor itself
+        }
+        match (anc.date, anc.time, t.date, t.time) {
+            (Some(ad), Some(at), Some(td), Some(tt)) => {
+                let diff = td.and_time(tt).signed_duration_since(ad.and_time(at));
+                let hours = chrono::Duration::hours(ANCHOR_WINDOW_HOURS);
+                if a.after { diff > chrono::Duration::zero() && diff <= hours } else { diff < chrono::Duration::zero() && -diff <= hours }
+            }
+            (Some(ad), _, Some(td), _) => {
+                // No clock times: use statement order within the same day.
+                td == ad && t.source == anc.source && if a.after { t.line_no > anc.line_no } else { t.line_no < anc.line_no }
+            }
+            _ => false,
+        }
+    };
+
     let matched: Vec<&Transaction> = txns
         .iter()
         .filter(|t| {
@@ -120,7 +178,8 @@ pub fn analyze_parsed(doc: &ParsedDoc, query: &str) -> AnalysisResult {
                 _ => true,
             };
             let dir_ok = f.direction.map_or(true, |dir| t.direction == dir);
-            kw_ok && date_ok && dir_ok
+            let amt_ok = f.amount_min.map_or(true, |lo| t.amount >= lo) && f.amount_max.map_or(true, |hi| t.amount <= hi);
+            kw_ok && date_ok && dir_ok && amt_ok && in_window(t)
         })
         .collect();
     let interpreted = Interpreted {
@@ -155,6 +214,7 @@ pub fn analyze_parsed(doc: &ParsedDoc, query: &str) -> AnalysisResult {
     for t in matched.iter().take(MATCHED_CAP) {
         matched_out.push(MatchedTxn {
             date: t.date.map(|d| d.to_string()),
+            time: t.time.map(|tm| tm.format("%H:%M").to_string()),
             description: truncate(&t.description, 200),
             amount: round2(t.amount),
             direction: t.direction,
@@ -403,6 +463,7 @@ fn row_to_txn(source: &str, line_no: usize, row: &[String], m: &ColMap, _ncols: 
 
     Some(Transaction {
         date,
+        time: cell(row, m.date).and_then(util::find_time_in_line).or_else(|| util::find_time_in_line(&joined)),
         description: clean(&description),
         amount,
         direction,
@@ -485,12 +546,15 @@ fn parse_statement_row(source: &str, idx: usize, row: &str, out: &mut Vec<Transa
     };
 
     let date = util::find_date_in_line(row);
+    // The row starts with the transaction datetime, so the first clock time is it.
+    let time = util::find_time_in_line(row);
     let desc_raw = ROW_PREFIX.replace(&row[..cut], "");
     let desc: String = desc_raw.chars().filter(|c| !"₦$£€¥₹₵₿₩".contains(*c)).collect();
     let desc = clean(&desc);
 
     out.push(Transaction {
         date,
+        time,
         description: if desc.is_empty() { clean(row) } else { desc },
         amount,
         direction,
@@ -542,6 +606,7 @@ fn text_to_txns_lines(source: &str, lines: &[String], out: &mut Vec<Transaction>
 
         out.push(Transaction {
             date,
+            time: util::find_time_in_line(line),
             description: desc,
             amount: money.magnitude(),
             direction,
@@ -704,6 +769,21 @@ fn human_size(bytes: usize) -> String {
 
 fn clean(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ").trim().to_string()
+}
+
+/// True if any distinctive token (3+ chars) of `kw` appears in the description or raw text.
+/// Lenient on purpose: "ndo hotel" should still hit "NDO HOTELS LTD".
+fn tokens_any_match(desc: &str, raw: &str, kw: &str) -> bool {
+    if kw.is_empty() {
+        return true;
+    }
+    let d = desc.to_lowercase();
+    let r = raw.to_lowercase();
+    let toks: Vec<&str> = kw.split_whitespace().filter(|w| w.len() >= 3).collect();
+    if toks.is_empty() {
+        return d.contains(kw) || r.contains(kw);
+    }
+    toks.iter().any(|w| d.contains(w) || r.contains(w))
 }
 
 fn truncate(s: &str, max: usize) -> String {
@@ -871,5 +951,44 @@ mod tests {
         let csv = "Date,Description,Debit,Credit,Balance\n2026-01-01,A,100.00,,0\n2026-01-02,B,,200.00,0\n";
         let r = run("t.csv", csv.as_bytes(), "");
         assert_eq!(r.summary.matched_transactions, 2);
+    }
+
+    /// "transfer out of 20k-45k a few hours after I paid ndo hotel 30k":
+    /// anchor on the Ndo payment, then only debits in 20k..45k within 6h after it.
+    #[test]
+    fn anchored_query_with_amount_band_and_time_window() {
+        let csv = "Trans. Date,Value Date,Description,Debit(₦),Credit(₦),Balance After(₦)\n\
+            05 Mar 2026 09:02:11,05 Mar 2026,Transfer to CHINEDU OKONKWO | OPay,25000.00,--,120000.00\n\
+            05 Mar 2026 11:20:14,05 Mar 2026,Transfer to NDO HOTELS LTD | Access Bank,30000.00,--,90000.00\n\
+            05 Mar 2026 13:00:40,05 Mar 2026,Transfer to EMEKA NWOSU | OPay,10000.00,--,80000.00\n\
+            05 Mar 2026 14:05:52,05 Mar 2026,Transfer to ADEBAYO OLUWASEUN | OPay,35000.00,--,45000.00\n\
+            05 Mar 2026 15:10:03,05 Mar 2026,Transfer to FOLASHADE ADEYEMI | GTBank,50000.00,--,0.00\n\
+            06 Mar 2026 10:00:00,06 Mar 2026,Transfer to TUNDE BAKARE | OPay,30000.00,--,20000.00\n";
+        let r = run("t.csv", csv.as_bytes(), "transfer i made out 20k-45k a few hours after i paid an hotel called ndo 30k");
+        assert_eq!(r.summary.matched_transactions, 1, "only the 35k transfer a few hours after Ndo");
+        assert!(r.matched[0].description.contains("ADEBAYO"));
+        assert_eq!(r.matched[0].time.as_deref(), Some("14:05"));
+
+        // "before" window works too
+        let r = run("t.csv", csv.as_bytes(), "what did i send before i paid ndo 30k");
+        assert_eq!(r.summary.matched_transactions, 1);
+        assert!(r.matched[0].description.contains("CHINEDU"));
+
+        // plain keyword search is unaffected by the new parsing
+        let r = run("t.csv", csv.as_bytes(), "adebayo");
+        assert_eq!(r.summary.matched_transactions, 1);
+    }
+
+    #[test]
+    fn amount_band_phrasings() {
+        let today = NaiveDate::from_ymd_opt(2026, 7, 4).unwrap();
+        let f = crate::nlquery::parse("between 20k and 45k", today);
+        assert_eq!((f.amount_min, f.amount_max), (Some(20000.0), Some(45000.0)));
+        assert!(f.keyword.is_empty(), "amounts must not leak into the keyword");
+        let f = crate::nlquery::parse("over 1.5m to chiamaka", today);
+        assert_eq!(f.amount_min, Some(1_500_000.0));
+        assert_eq!(f.keyword, "chiamaka");
+        let f = crate::nlquery::parse("under 5k", today);
+        assert_eq!(f.amount_max, Some(5000.0));
     }
 }
