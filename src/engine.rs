@@ -116,7 +116,6 @@ pub fn analyze_parsed(doc: &ParsedDoc, query: &str) -> AnalysisResult {
     }
 
     // Resolve the anchor ("… after I paid ndo 30k") to one concrete transaction.
-    const ANCHOR_WINDOW_HOURS: i64 = 6;
     let anchor_txn: Option<&Transaction> = f.anchor.as_ref().and_then(|a| {
         let akw = a.keyword.to_lowercase();
         let found = txns.iter().find(|t| {
@@ -134,14 +133,15 @@ pub fn analyze_parsed(doc: &ParsedDoc, query: &str) -> AnalysisResult {
         found
     });
     if let (Some(a), Some(t)) = (f.anchor.as_ref(), anchor_txn) {
+        let rel = if a.around { "either side of" } else if a.after { "after" } else { "before" };
         warnings.push(format!(
             "Anchored {} “{}” on {}{} ({}). Showing transactions within {} hours.",
-            if a.after { "after" } else { "before" },
+            rel,
             truncate(&t.description, 60),
             t.date.map(|d| d.to_string()).unwrap_or_default(),
             t.time.map(|tm| format!(" {}", tm.format("%H:%M"))).unwrap_or_default(),
             fmt_money(&currency.symbol, t.amount),
-            ANCHOR_WINDOW_HOURS
+            a.window_hours
         ));
     }
 
@@ -153,15 +153,30 @@ pub fn analyze_parsed(doc: &ParsedDoc, query: &str) -> AnalysisResult {
         if std::ptr::eq(t, anc) {
             return false; // never return the anchor itself
         }
+        let window = chrono::Duration::hours(a.window_hours);
         match (anc.date, anc.time, t.date, t.time) {
             (Some(ad), Some(at), Some(td), Some(tt)) => {
+                // Real datetimes: crosses midnight naturally ("early morning" after a night payment).
                 let diff = td.and_time(tt).signed_duration_since(ad.and_time(at));
-                let hours = chrono::Duration::hours(ANCHOR_WINDOW_HOURS);
-                if a.after { diff > chrono::Duration::zero() && diff <= hours } else { diff < chrono::Duration::zero() && -diff <= hours }
+                if a.around {
+                    diff != chrono::Duration::zero() && diff.abs() <= window
+                } else if a.after {
+                    diff > chrono::Duration::zero() && diff <= window
+                } else {
+                    diff < chrono::Duration::zero() && -diff <= window
+                }
             }
             (Some(ad), _, Some(td), _) => {
-                // No clock times: use statement order within the same day.
-                td == ad && t.source == anc.source && if a.after { t.line_no > anc.line_no } else { t.line_no < anc.line_no }
+                // No clock times: use statement order, allowing the adjacent day.
+                let day_gap = (td - ad).num_days();
+                let same_src = t.source == anc.source;
+                if a.around {
+                    day_gap.abs() <= 1 && same_src
+                } else if a.after {
+                    same_src && (day_gap == 1 || (day_gap == 0 && t.line_no > anc.line_no))
+                } else {
+                    same_src && (day_gap == -1 || (day_gap == 0 && t.line_no < anc.line_no))
+                }
             }
             _ => false,
         }

@@ -31,8 +31,14 @@ pub struct Anchor {
     pub keyword: String,
     /// Amount of the anchor transaction, if stated (e.g. 30000 for "30k").
     pub amount: Option<f64>,
-    /// true = look AFTER the anchor, false = BEFORE it.
+    /// true = look AFTER the anchor, false = BEFORE it (ignored when `around`).
     pub after: bool,
+    /// true = either side of the anchor ("around the time I paid ndo").
+    pub around: bool,
+    /// Size of the window in hours, inferred from phrasing:
+    /// "few hours / shortly / right after" = 6, "that night / next morning" = 18,
+    /// "within 12 hours" = 12, otherwise 12.
+    pub window_hours: i64,
 }
 
 const DEBIT_VERBS: &[&str] = &[
@@ -64,6 +70,12 @@ const STOPWORDS: &[&str] = &[
     "yoruba", "igbo", "hausa", "naira", "ngn",
     // question words
     "what", "which", "who", "whom", "whose", "where", "when", "why", "whats", "did",
+    // vague / time-of-day phrasing ("probably in the night or early morning at the hotel room")
+    "time", "moment", "then", "or", "so", "like", "probably", "maybe", "perhaps", "think",
+    "thought", "remember", "cant", "can't", "dont", "don't", "night", "nights", "morning",
+    "evening", "afternoon", "overnight", "midnight", "early", "late", "within", "room",
+    "there", "thats", "that's", "im", "i'm", "using", "narrow", "down", "also", "came",
+    "come", "left", "leave", "stayed", "stay", "same", "following", "next",
 ];
 
 const MONTHS: &[(&str, u32)] = &[
@@ -76,7 +88,29 @@ const MONTHS: &[(&str, u32)] = &[
 static LAST_N: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?:last|past)\s+(\d+)\s+(day|week|month|year)s?").unwrap());
 
-static ANCHOR_SPLIT: Lazy<Regex> = Lazy::new(|| Regex::new(r"\b(after|before)\b").unwrap());
+static ANCHOR_SPLIT: Lazy<Regex> = Lazy::new(|| Regex::new(r"\b(after|before|around|near)\b").unwrap());
+static WINDOW_N: Lazy<Regex> = Lazy::new(|| Regex::new(r"\b(\d{1,3})\s*(?:hours?|hrs?|h)\b").unwrap());
+static WINDOW_LONG: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"overnight|that night|the night|at night|in the night|next morning|morning after|the morning|early morning|by morning|following morning|next day|the day after|same day").unwrap()
+});
+static WINDOW_SHORT: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\b(few|couple|shortly|right|immediately|just|minutes?|mins?|straight)\b").unwrap());
+
+/// How wide the anchor window is, from how the user phrased it.
+fn detect_window_hours(l: &str) -> i64 {
+    if let Some(c) = WINDOW_N.captures(l) {
+        if let Ok(n) = c[1].parse::<i64>() {
+            return n.clamp(1, 168);
+        }
+    }
+    if WINDOW_LONG.is_match(l) {
+        return 18;
+    }
+    if WINDOW_SHORT.is_match(l) {
+        return 6;
+    }
+    12
+}
 static AMT_RANGE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"(\d+(?:[.,]\d+)*)\s*(k|m)?\s*(?:-|–|to|and)\s*(\d+(?:[.,]\d+)*)\s*(k|m)?\b").unwrap()
 });
@@ -103,11 +137,21 @@ pub fn parse(query: &str, today: NaiveDate) -> QueryFilter {
     let mut target = lower.clone();
     let mut anchor: Option<Anchor> = None;
     if let Some(m) = ANCHOR_SPLIT.find_iter(&lower).last() {
+        let word = m.as_str();
         let clause = lower[m.end()..].trim();
         let a_amount = first_amount(clause);
         let a_keyword = extract_keyword(clause);
-        if !a_keyword.is_empty() || a_amount.is_some() {
-            anchor = Some(Anchor { keyword: a_keyword, amount: a_amount, after: m.as_str() == "after" });
+        let is_around = word == "around" || word == "near";
+        // "around 30k" is an amount band, not an anchor: around/near need a named thing.
+        let ok = if is_around { !a_keyword.is_empty() } else { !a_keyword.is_empty() || a_amount.is_some() };
+        if ok {
+            anchor = Some(Anchor {
+                keyword: a_keyword,
+                amount: a_amount,
+                after: word == "after",
+                around: is_around,
+                window_hours: detect_window_hours(&lower),
+            });
             target = lower[..m.start()].trim().to_string();
         }
     }
@@ -118,8 +162,18 @@ pub fn parse(query: &str, today: NaiveDate) -> QueryFilter {
     // 2) Date range (from the target)
     let (date_from, date_to, date_label) = detect_range(&target, today);
 
-    // 3) Amount band (from the target)
-    let (amount_min, amount_max) = detect_amount_band(&target);
+    // 3) Amount band (from the target; if the user put it after the anchor,
+    //    e.g. "...after I paid ndo 30k, 20k-45k", look at the whole query).
+    let (mut amount_min, mut amount_max) = detect_amount_band(&target);
+    if amount_min.is_none() && amount_max.is_none() && anchor.is_some() {
+        let (lo, hi) = detect_amount_band(&lower);
+        // Only accept an explicit two-sided range here, so the anchor's own
+        // "30k" can never be mistaken for a band.
+        if lo.is_some() && hi.is_some() {
+            amount_min = lo;
+            amount_max = hi;
+        }
+    }
 
     // 4) Keyword (strip fillers, time words, verbs, months, numbers)
     let keyword = extract_keyword(&target);
@@ -330,11 +384,8 @@ fn build_human(
             }
             what.push_str(&format!("({})", fmt_amt(v)));
         }
-        parts.push(format!(
-            "· within hours {} the {} payment",
-            if a.after { "after" } else { "before" },
-            what
-        ));
+        let rel = if a.around { "either side of" } else if a.after { "after" } else { "before" };
+        parts.push(format!("· within {}h {} the {} payment", a.window_hours, rel, what));
     }
     if parts.is_empty() {
         "all transactions".into()
