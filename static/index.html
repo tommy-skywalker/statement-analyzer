@@ -3,18 +3,21 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Statement Analyzer · Understand any bank statement in seconds</title>
-<meta name="description" content="Upload any bank statement (PDF, CSV, Excel), ask in plain English, and get instant debit/credit intelligence: totals, date ranges, currency and more. Fast, private, deterministic." />
+<title>Bank Statement Analyzer | Search PDF, CSV &amp; Excel Statements</title>
+<meta name="description" content="Free online bank statement analyzer. Upload a PDF, CSV or Excel statement, ask in plain English, and instantly see totals, transfers and spending. Private." />
 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="icon" type="image/png" sizes="192x192" href="/favicon.png" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<meta name="theme-color" content="#08090a" />
 <link rel="canonical" href="https://yourstatementanalyzer.com/" />
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="Statement Analyzer" />
-<meta property="og:title" content="Understand any bank statement in seconds" />
+<meta property="og:title" content="Bank Statement Analyzer: understand any statement in seconds" />
 <meta property="og:description" content="Upload a statement in any format, ask in plain English, get instant debit/credit intelligence. Fast, private, no AI." />
 <meta property="og:url" content="https://yourstatementanalyzer.com/" />
 <meta property="og:image" content="https://yourstatementanalyzer.com/og.png" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="Understand any bank statement in seconds" />
+<meta name="twitter:title" content="Bank Statement Analyzer: understand any statement in seconds" />
 <meta name="twitter:description" content="Any statement. Any question. Instant answers." />
 <meta name="twitter:image" content="https://yourstatementanalyzer.com/og.png" />
 <script type="application/ld+json">
@@ -34,6 +37,88 @@
     "Debit and credit totals, counts, date ranges and duration",
     "Export to PDF, Excel, CSV, JSON and shareable image"
   ]
+}
+</script>
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@graph": [
+  {
+   "@type": "WebSite",
+   "@id": "https://yourstatementanalyzer.com/#website",
+   "url": "https://yourstatementanalyzer.com/",
+   "name": "Statement Analyzer",
+   "description": "Online bank statement analyzer for PDF, CSV and Excel statements."
+  },
+  {
+   "@type": "Organization",
+   "@id": "https://yourstatementanalyzer.com/#org",
+   "name": "Statement Analyzer",
+   "url": "https://yourstatementanalyzer.com/",
+   "logo": "https://yourstatementanalyzer.com/favicon.png"
+  },
+  {
+   "@type": "FAQPage",
+   "mainEntity": [
+    {
+     "@type": "Question",
+     "name": "What is a bank statement analyzer?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "It is a tool that reads your bank statement and answers questions about it. Upload the file, type a name, a keyword or a plain-English question, and you get the matching transactions with totals for money in and money out, dates and duration."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Which banks and file formats does it work with?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Any bank that lets you download a statement as PDF, CSV or Excel. It has been tested most heavily on OPay statements. CSV and Excel exports from other banks work when they include date, description and amount columns. ZIP archives and plain text files are accepted too."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Is my bank statement stored or shared?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "No. Your statement is processed in memory, is never written to disk, and is cleared automatically shortly after you finish. Transactions are not saved, sold or used to train anything."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Can I really search in plain English?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Yes. Try: how much did I spend on chicken last month, everything sent to John this year, transfers between 20k and 45k, or money I sent in the night after I paid the hotel 30k on 25 March. It understands names, dates, amounts, money in versus money out, and before or after another payment."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "How do I find everything I sent to one person?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Upload your statement, type the person's name and press Analyze. You will see every transfer to and from them, the total, the number of transactions, and the first and last dates."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Can I export the results?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Yes. Results export to PDF, Excel, CSV and JSON, and you can save a shareable image card of any search."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Is it free? Do I need an account?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "It is free to use and you do not need to sign up. Businesses that want it inside their own workflow can get in touch by email."
+     }
+    }
+   ]
+  }
+ ]
 }
 </script>
 <style>
@@ -56,6 +141,7 @@
   .eyebrow{font-size:12px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
   h1,h2,h3{letter-spacing:-.01em}
   .section{padding:84px 0}
+  section[id]{scroll-margin-top:84px}
 
   /* corner-bracket panel */
   .term{position:relative;background:var(--card);border:1px solid var(--line);border-radius:var(--radius)}
@@ -185,6 +271,15 @@
   .uc .q{margin-top:12px;font-size:12.5px;color:var(--accent);border-left:2px solid var(--accent);padding:2px 0 2px 10px}
   .uc .q::before{content:"$ "}
 
+  /* faq */
+  .faq-list{max-width:860px;margin:0 auto;display:grid;gap:12px}
+  .faq{padding:0}
+  .faq summary{cursor:pointer;list-style:none;padding:18px 22px;font-size:14.5px;font-weight:700;color:var(--ink);display:flex;justify-content:space-between;gap:14px}
+  .faq summary::-webkit-details-marker{display:none}
+  .faq summary::after{content:"+";color:var(--accent);font-weight:800}
+  .faq[open] summary::after{content:"-"}
+  .faq p{padding:0 22px 20px;color:var(--ink-2);font-size:14px;line-height:1.65}
+
   /* enterprise */
   .ent{padding:52px 44px;text-align:center;border-color:var(--accent)}
   .ent h2{font-size:clamp(22px,3.2vw,34px);font-weight:800;margin-top:12px;text-transform:uppercase}
@@ -262,6 +357,7 @@
       <a href="#features">Product</a>
       <a href="#usecases">Use cases</a>
       <a href="#how">How it works</a>
+      <a href="#faq">FAQ</a>
       <a href="#contact">For business</a>
     </nav>
     <a class="btn btn-primary" href="/app">Open the app <svg class="ic"><use href="#i-arrow"/></svg></a>
@@ -334,7 +430,7 @@
       <p>Built in Rust for speed and precision: deterministic results, no AI guesswork, and nothing about your data leaves your control. From a single receipt to a year of enterprise transactions.</p>
     </div>
     <div class="feat-grid">
-      <div class="term feat"><div class="ic-box"><svg class="ic"><use href="#i-upload"/></svg></div><h3>Any format, one upload</h3><p>PDF, CSV, Excel, text or a whole archive. Auto-detects columns, currency and layout — no templates.</p></div>
+      <div class="term feat"><div class="ic-box"><svg class="ic"><use href="#i-upload"/></svg></div><h3>Any format, one upload</h3><p>PDF, CSV, Excel, text or a whole archive. Auto-detects columns, currency and layout, no templates.</p></div>
       <div class="term feat"><div class="ic-box"><svg class="ic"><use href="#i-spark"/></svg></div><h3>Ask in plain English</h3><p>"How much did I send to John this year?" Smart search understands names, dates and money-in vs out.</p></div>
       <div class="term feat"><div class="ic-box"><svg class="ic"><use href="#i-chart"/></svg></div><h3>Debit / credit intelligence</h3><p>Instant totals, counts, averages, first/last dates, duration and net flow, split by money in and out.</p></div>
       <div class="term feat"><div class="ic-box"><svg class="ic"><use href="#i-bolt"/></svg></div><h3>Fast on huge files</h3><p>Scans tens of thousands of transactions in a fraction of a second. Big exports don't slow it down.</p></div>
@@ -398,6 +494,22 @@
   </div>
 </section>
 
+<!-- FAQ -->
+<section class="section" id="faq" style="padding-top:0">
+  <div class="wrap">
+    <div class="sec-head"><span class="eyebrow">Questions</span><h2>Bank statement analyzer FAQ</h2></div>
+    <div class="faq-list">
+      <details class="term faq"><summary>What is a bank statement analyzer?</summary><p>It is a tool that reads your bank statement and answers questions about it. Upload the file, type a name, a keyword or a plain-English question, and you get the matching transactions with totals for money in and money out, dates and duration.</p></details>
+      <details class="term faq"><summary>Which banks and file formats does it work with?</summary><p>Any bank that lets you download a statement as PDF, CSV or Excel. It has been tested most heavily on OPay statements. CSV and Excel exports from other banks work when they include date, description and amount columns. ZIP archives and plain text files are accepted too.</p></details>
+      <details class="term faq"><summary>Is my bank statement stored or shared?</summary><p>No. Your statement is processed in memory, is never written to disk, and is cleared automatically shortly after you finish. Transactions are not saved, sold or used to train anything.</p></details>
+      <details class="term faq"><summary>Can I really search in plain English?</summary><p>Yes. Try: how much did I spend on chicken last month, everything sent to John this year, transfers between 20k and 45k, or money I sent in the night after I paid the hotel 30k on 25 March. It understands names, dates, amounts, money in versus money out, and before or after another payment.</p></details>
+      <details class="term faq"><summary>How do I find everything I sent to one person?</summary><p>Upload your statement, type the person's name and press Analyze. You will see every transfer to and from them, the total, the number of transactions, and the first and last dates.</p></details>
+      <details class="term faq"><summary>Can I export the results?</summary><p>Yes. Results export to PDF, Excel, CSV and JSON, and you can save a shareable image card of any search.</p></details>
+      <details class="term faq"><summary>Is it free? Do I need an account?</summary><p>It is free to use and you do not need to sign up. Businesses that want it inside their own workflow can get in touch by email.</p></details>
+    </div>
+  </div>
+</section>
+
 <!-- ENTERPRISE -->
 <section class="section" id="contact" style="padding-top:0">
   <div class="wrap">
@@ -431,7 +543,7 @@
         <p style="color:var(--muted);font-size:13.5px;margin-top:12px">Understand any bank statement in seconds. Fast, private, deterministic.</p>
       </div>
       <div class="ft-cols">
-        <div class="ft-col"><h4>Product</h4><a href="/app">Open the app</a><a href="#features">Features</a><a href="#how">How it works</a></div>
+        <div class="ft-col"><h4>Product</h4><a href="/app">Open the app</a><a href="#features">Features</a><a href="#how">How it works</a><a href="#faq">FAQ</a></div>
         <div class="ft-col"><h4>Use cases</h4><a href="#usecases">For lenders</a><a href="#usecases">For accountants</a><a href="#usecases">For business</a></div>
         <div class="ft-col"><h4>Company</h4><a href="mailto:babatomiwasokeyo@gmail.com">Contact</a><a href="#contact">For enterprise</a></div>
       </div>

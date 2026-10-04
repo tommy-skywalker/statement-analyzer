@@ -178,6 +178,9 @@ async fn main() {
         .route("/admin", get(admin_page))
         .route("/config.js", get(config_js))
         .route("/favicon.svg", get(favicon))
+        .route("/favicon.ico", get(favicon_png))
+        .route("/favicon.png", get(favicon_png))
+        .route("/apple-touch-icon.png", get(apple_touch_icon))
         .route("/og.png", get(og_image))
         .route("/robots.txt", get(robots))
         .route("/sitemap.xml", get(sitemap))
@@ -187,6 +190,7 @@ async fn main() {
         .route("/api/feedback", post(feedback))
         .route("/api/admin/login", post(admin_login))
         .route("/api/admin/stats", get(admin_stats))
+        .fallback(not_found)
         .layer(middleware::from_fn(security_headers))
         .layer(tower_http::compression::CompressionLayer::new())
         .layer(DefaultBodyLimit::max(max_mb * 1024 * 1024))
@@ -221,32 +225,57 @@ async fn app_page() -> Html<&'static str> {
     Html(APP_HTML)
 }
 
+// Static assets are immutable between deploys, so let browsers and crawlers
+// cache them (HTML stays revalidated; see `security_headers`).
+const CACHE_DAY: &str = "public, max-age=86400";
+const CACHE_HOUR: &str = "public, max-age=3600";
+
 async fn favicon() -> impl IntoResponse {
     (
-        [(axum::http::header::CONTENT_TYPE, "image/svg+xml")],
+        [(axum::http::header::CONTENT_TYPE, "image/svg+xml"), (axum::http::header::CACHE_CONTROL, CACHE_DAY)],
         include_str!("../static/favicon.svg"),
+    )
+}
+
+/// PNG icon (also answers /favicon.ico, which browsers and Google request by default).
+async fn favicon_png() -> impl IntoResponse {
+    (
+        [(axum::http::header::CONTENT_TYPE, "image/png"), (axum::http::header::CACHE_CONTROL, CACHE_DAY)],
+        include_bytes!("../static/favicon.png").as_slice(),
+    )
+}
+
+async fn apple_touch_icon() -> impl IntoResponse {
+    (
+        [(axum::http::header::CONTENT_TYPE, "image/png"), (axum::http::header::CACHE_CONTROL, CACHE_DAY)],
+        include_bytes!("../static/apple-touch-icon.png").as_slice(),
     )
 }
 
 async fn og_image() -> impl IntoResponse {
     (
-        [(axum::http::header::CONTENT_TYPE, "image/png")],
+        [(axum::http::header::CONTENT_TYPE, "image/png"), (axum::http::header::CACHE_CONTROL, CACHE_DAY)],
         include_bytes!("../static/og.png").as_slice(),
     )
 }
 
 async fn robots() -> impl IntoResponse {
     (
-        [(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        [(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8"), (axum::http::header::CACHE_CONTROL, CACHE_HOUR)],
         include_str!("../static/robots.txt"),
     )
 }
 
 async fn sitemap() -> impl IntoResponse {
     (
-        [(axum::http::header::CONTENT_TYPE, "application/xml; charset=utf-8")],
+        [(axum::http::header::CONTENT_TYPE, "application/xml; charset=utf-8"), (axum::http::header::CACHE_CONTROL, CACHE_HOUR)],
         include_str!("../static/sitemap.xml"),
     )
+}
+
+/// Branded 404 with the correct status code (and noindex so it never ranks).
+async fn not_found() -> impl IntoResponse {
+    (StatusCode::NOT_FOUND, Html(include_str!("../static/404.html")))
 }
 
 async fn admin_page() -> Html<&'static str> {
@@ -267,13 +296,25 @@ async fn health() -> impl IntoResponse {
 // ----------------------------- security headers -----------------------------
 
 async fn security_headers(req: axum::extract::Request, next: Next) -> Response {
+    // One canonical host: 301 www.* to the bare domain so search engines and
+    // link previews only ever see a single site.
+    if let Some(bare) = req.headers().get("host").and_then(|v| v.to_str().ok()).and_then(|h| h.strip_prefix("www.")) {
+        let pq = req.uri().path_and_query().map(|p| p.as_str()).unwrap_or("/");
+        if let Ok(loc) = HeaderValue::from_str(&format!("https://{bare}{pq}")) {
+            return (StatusCode::MOVED_PERMANENTLY, [(axum::http::header::LOCATION, loc)]).into_response();
+        }
+    }
+
     let mut res = next.run(req).await;
     let h = res.headers_mut();
     let set = |h: &mut HeaderMap, k: &'static str, v: &'static str| {
         h.insert(HeaderName::from_static(k), HeaderValue::from_static(v));
     };
-    // Always serve fresh HTML/assets so a reload never shows a stale UI.
-    set(h, "cache-control", "no-store, max-age=0, must-revalidate");
+    // HTML/API: always revalidate, so a reload never shows a stale UI.
+    // Static assets set their own longer cache lifetime and are left alone.
+    if !h.contains_key("cache-control") {
+        set(h, "cache-control", "no-cache");
+    }
     set(h, "x-content-type-options", "nosniff");
     set(h, "x-frame-options", "DENY");
     set(h, "referrer-policy", "strict-origin-when-cross-origin");
