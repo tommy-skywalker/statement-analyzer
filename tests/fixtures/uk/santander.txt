@@ -1,0 +1,53 @@
+From: 01/09/2026 to 30/09/2026
+
+Account: XXXX XXXX XXXX 5678
+
+Date: 01/09/2026
+Description: CARD PAYMENT TO TESCO STORES 3297
+Amount: -23.50 GBP
+Balance: 1476.50 GBP
+
+Date: 02/09/2026
+Description: DIRECT DEBIT BRITISH GAS
+Amount: -45.00 GBP
+Balance: 1431.50 GBP
+
+Date: 03/09/2026
+Description: FASTER PAYMENT FROM J SMITH
+Amount: 250.00 GBP
+Balance: 1681.50 GBP
+
+Date: 05/09/2026
+Description: CROYDON COUNCIL TAX
+Amount: -132.00 GBP
+Balance: 1549.50 GBP
+
+Date: 08/09/2026
+Description: DR MARTENS LONDON
+Amount: -89.99 GBP
+Balance: 1459.51 GBP
+
+Date: 15/09/2026
+Description: ACME LTD SALARY
+Amount: 2100.00 GBP
+Balance: 3559.51 GBP
+
+Date: 18/09/2026
+Description: STANDING ORDER LANDLORD RENT
+Amount: -950.00 GBP
+Balance: 2609.51 GBP
+
+Date: 22/09/2026
+Description: TFL TRAVEL CHARGE
+Amount: -8.10 GBP
+Balance: 2601.41 GBP
+
+Date: 25/09/2026
+Description: AMAZON REFUND
+Amount: 19.99 GBP
+Balance: 2621.40 GBP
+
+Date: 28/09/2026
+Description: CASH WITHDRAWAL ATM HIGH ST
+Amount: -60.00 GBP
+Balance: 2561.40 GBP

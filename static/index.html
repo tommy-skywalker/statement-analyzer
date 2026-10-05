@@ -162,9 +162,10 @@
 
   /* status bar + nav */
   .statusbar{border-bottom:1px solid var(--line);background:var(--card)}
-  .statusrow{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;height:44px;font-size:12px;color:var(--muted)}
+  .statusrow{display:flex;align-items:center;justify-content:space-between;gap:12px;height:44px;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden}
   .statusrow b{color:var(--ink)}
-  .statusrow .grp{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+  .statusrow .grp{display:flex;gap:16px;align-items:center}
+  @media(max-width:620px){.statusrow .hide-xs{display:none}}
   header.nav{position:sticky;top:0;z-index:50;background:rgba(8,9,10,.85);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
   .navrow{display:flex;align-items:center;justify-content:space-between;height:64px}
   .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px;color:var(--ink);text-transform:uppercase;letter-spacing:.04em}
@@ -285,7 +286,7 @@
   .ent h2{font-size:clamp(22px,3.2vw,34px);font-weight:800;margin-top:12px;text-transform:uppercase}
   .ent p{color:var(--ink-2);font-size:15px;margin:14px auto 26px;max-width:600px}
   .ent .mailrow{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;align-items:center}
-  .ent .mail{font-weight:700;color:var(--accent);background:var(--accent-dim);border:1px solid var(--accent);padding:12px 18px;border-radius:3px;font-size:13.5px}
+  .ent .mail{cursor:pointer;font-family:inherit;font-weight:700;color:var(--accent);background:var(--accent-dim);border:1px solid var(--accent);padding:12px 18px;border-radius:3px;font-size:13.5px}
 
   /* final */
   .final{text-align:center}
@@ -345,8 +346,8 @@
 <!-- classified status bar -->
 <div class="statusbar">
   <div class="wrap statusrow">
-    <div class="grp"><b>STATEMENT ANALYZER</b> <span class="accent">// ANALYSIS TERMINAL</span></div>
-    <div class="grp"><span class="hide-sm">SESSION: <b>PUBLIC</b></span><span>ENGINE: <span class="tag">RUST</span></span><span>STATUS: <span class="tag">ONLINE</span></span></div>
+    <div class="grp"><b>STATEMENT ANALYZER</b> <span class="accent hide-xs">// ANALYSIS TERMINAL</span></div>
+    <div class="grp"><span class="hide-sm">SESSION: <b>PUBLIC</b></span><span class="hide-xs">ENGINE: <span class="tag">RUST</span></span><span>STATUS: <span class="tag">ONLINE</span></span></div>
   </div>
 </div>
 
@@ -519,7 +520,7 @@
       <p>Lenders, fintechs, accounting firms and back-offices: we can tailor the engine to your workflow, run it on your own infrastructure, or plug it into your product via API. Tell us your use case.</p>
       <div class="mailrow">
         <a class="btn btn-primary btn-lg" href="mailto:babatomiwasokeyo@gmail.com?subject=Statement%20Analyzer%20for%20my%20business&body=Hi%2C%20I%27d%20like%20to%20use%20Statement%20Analyzer%20for%20my%20business.%20Here%27s%20my%20use%20case%3A"><svg class="ic"><use href="#i-mail"/></svg> Email us your use case</a>
-        <span class="mail">babatomiwasokeyo@gmail.com</span>
+        <button type="button" class="mail" id="copyMail">Copy email address</button>
       </div>
     </div>
   </div>
@@ -565,6 +566,17 @@
   fetch(API+"/api/track",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({visitor:v,path:location.pathname||"/",referrer:document.referrer})}).catch(function(){});
 }catch(e){} })();
+
+// copy the business contact address without printing it on the page
+(function(){
+  const b=document.getElementById('copyMail'); if(!b) return;
+  b.addEventListener('click',function(){
+    const addr=(document.querySelector('.ent a[href^="mailto:"]').getAttribute('href').split(':')[1]||'').split('?')[0];
+    const done=function(){ b.textContent='Copied'; setTimeout(function(){ b.textContent='Copy email address'; },1800); };
+    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(addr).then(done,function(){ b.textContent=addr; }); }
+    else { b.textContent=addr; }
+  });
+})();
 
 (function(){ const t=document.getElementById('mqTrack'); t.innerHTML+=t.innerHTML; })();
 

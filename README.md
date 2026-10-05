@@ -18,7 +18,10 @@ chew through large files in a fraction of a second.
 - **Multi-format ingestion** — one upload endpoint handles them all:
   - `CSV` / `TSV` (streaming reader)
   - `XLSX` / `XLS` / `XLSM` / `ODS` (every sheet)
-  - `PDF` (text extraction via `pdf-extract`)
+  - `PDF` (layout-preserving text via poppler's `pdftotext -layout` when installed, so the
+    paid out / paid in / balance columns of bank statements stay aligned; falls back to the
+    pure-Rust `pdf-extract`)
+  - `QIF`, `OFX` / `QFX` and key/value `.txt` exports (common UK bank downloads)
   - `TXT` / `LOG` / `MD` (line scanning)
   - `ZIP` (pure-Rust, recursive)
   - `RAR` / `7z` / `TAR(.gz/.bz2)` (delegated to a system `7z`/`7zz`/`unar`/`unrar`/`tar` if installed)

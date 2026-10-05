@@ -204,6 +204,19 @@ pub fn analyze_parsed(doc: &ParsedDoc, query: &str) -> AnalysisResult {
             kw_ok && date_ok && dir_ok && amt_ok && tod_ok && in_window(t)
         })
         .collect();
+    // "last 3 months" counts back from today; say so when the statement is older.
+    if let (true, Some(from), Some(to)) = (matched.is_empty(), f.date_from, f.date_to) {
+        let dates: Vec<NaiveDate> = txns.iter().filter_map(|t| t.date).collect();
+        if let (Some(lo), Some(hi)) = (dates.iter().min(), dates.iter().max()) {
+            if from > *hi || to < *lo {
+                warnings.push(format!(
+                    "This statement covers {lo} to {hi}, so nothing falls in the dates you asked for ({from} to {to}). Try naming the months, for example \"{}\".",
+                    hi.format("%B %Y")
+                ));
+            }
+        }
+    }
+
     let interpreted = Interpreted {
         keyword: f.keyword.clone(),
         direction: f.direction.map(|d| match d {
@@ -296,14 +309,19 @@ struct ColMap {
 }
 
 fn header_score(cells: &[String]) -> u32 {
+    // A header row never contains real data: a parseable date means this is a data row.
+    if cells.iter().any(|c| util::parse_date(c).is_some()) {
+        return 0;
+    }
     let mut s = 0;
     for c in cells {
         let l = c.to_lowercase();
         let l = l.trim();
         for kw in [
-            "date", "description", "narration", "details", "particular", "transaction",
+            "date", "description", "narration", "narrative", "details", "particular", "transaction",
             "debit", "withdrawal", "credit", "deposit", "amount", "balance", "value",
-            "reference", "type", "dr", "cr", "memo", "payee",
+            "reference", "type", "dr", "cr", "memo", "payee", "paid out", "paid in",
+            "money out", "money in", "counter party", "category", "currency", "notes",
         ] {
             if l == kw || (l.contains(kw) && l.len() <= kw.len() + 12) {
                 s += 1;
@@ -314,33 +332,62 @@ fn header_score(cells: &[String]) -> u32 {
     s
 }
 
+/// How good a column title is as the human-readable description (0 = not one).
+fn description_rank(l: &str) -> u8 {
+    if l.starts_with("account") || l.ends_with(" id") || l == "id" {
+        0
+    } else if l.contains("description") || l.contains("narrati") {
+        9
+    } else if l.contains("details") || l.contains("particular") {
+        8
+    } else if l.contains("memo") {
+        7
+    } else if l.contains("counter party") || l.contains("counterparty") || l.contains("payee") || l.contains("merchant") || l == "name" {
+        6
+    } else if l.contains("reference") {
+        4
+    } else if l.contains("transaction") {
+        3
+    } else if l.contains("notes") {
+        2
+    } else {
+        0
+    }
+}
+
 fn map_header(cells: &[String]) -> ColMap {
     let mut m = ColMap::default();
+    let mut best_desc = 0u8;
     for (i, c) in cells.iter().enumerate() {
         let l = c.to_lowercase();
         let l = l.trim();
+        if l.is_empty() {
+            continue;
+        }
         let set = |slot: &mut Option<usize>, idx: usize| {
             if slot.is_none() {
                 *slot = Some(idx);
             }
         };
+        let both = (l.contains("debit") && l.contains("credit")) || l.contains("dr/cr") || l.contains("cr/dr");
         if l.contains("balance") {
             set(&mut m.balance, i);
-        } else if l.contains("withdrawal") || l == "debit" || l == "dr" || l.contains("debit") || l.contains("money out") || l.contains("paid out") {
+        } else if both || l == "type" || l.ends_with(" type") || l.contains("indicator") {
+            set(&mut m.type_ind, i);
+        } else if l.contains("withdraw") || l == "dr" || l == "out" || l.contains("debit") || l.contains("money out") || l.contains("paid out") {
             set(&mut m.debit, i);
-        } else if l.contains("deposit") || l == "credit" || l == "cr" || l.contains("credit") || l.contains("money in") || l.contains("paid in") {
+        } else if l.contains("deposit") || l == "cr" || l == "in" || l.contains("credit") || l.contains("money in") || l.contains("paid in") {
             set(&mut m.credit, i);
-        } else if l.contains("date") || l.contains("posted") || l.contains("value date") {
+        } else if l.contains("date") || l.contains("posted") {
             set(&mut m.date, i);
         } else if l.contains("amount") || l.contains("value") {
             set(&mut m.amount, i);
-        } else if l.contains("description") || l.contains("narration") || l.contains("details")
-            || l.contains("particular") || l.contains("memo") || l.contains("payee")
-            || l.contains("reference") || l.contains("transaction")
-        {
-            set(&mut m.description, i);
-        } else if l == "type" || l.contains("dr/cr") || l.contains("cr/dr") || l.contains("indicator") {
-            set(&mut m.type_ind, i);
+        } else {
+            let rank = description_rank(l);
+            if rank > best_desc {
+                best_desc = rank;
+                m.description = Some(i);
+            }
         }
     }
     m
@@ -368,13 +415,27 @@ fn table_to_txns(source: &str, rows: &[Vec<String>], out: &mut Vec<Transaction>)
     };
 
     let ncols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+
+    // One signed Amount column: if any value is negative, the sign is the
+    // direction. If none is, the sign says nothing and we lean on the type
+    // column and the running balance instead.
+    let single_amount = map.debit.is_none() && map.credit.is_none() && map.amount.is_some();
+    let signed = single_amount
+        && rows.iter().skip(start).any(|r| {
+            cell(r, map.amount).and_then(util::parse_amount).map_or(false, |a| a.value < 0.0 || a.negative_hint)
+        });
+
+    let first_new = out.len();
     for (ri, row) in rows.iter().enumerate().skip(start) {
         if row.iter().all(|c| c.trim().is_empty()) {
             continue;
         }
-        if let Some(t) = row_to_txn(source, ri, row, &map, ncols) {
+        if let Some(t) = row_to_txn(source, ri, row, &map, ncols, signed) {
             out.push(t);
         }
+    }
+    if single_amount && !signed {
+        fix_directions_by_balance(&mut out[first_new..], &std::collections::HashMap::new());
     }
 }
 
@@ -439,14 +500,15 @@ fn cell<'a>(row: &'a [String], idx: Option<usize>) -> Option<&'a str> {
     idx.and_then(|i| row.get(i)).map(|s| s.as_str()).filter(|s| !s.trim().is_empty())
 }
 
-fn row_to_txn(source: &str, line_no: usize, row: &[String], m: &ColMap, _ncols: usize) -> Option<Transaction> {
+fn row_to_txn(source: &str, line_no: usize, row: &[String], m: &ColMap, _ncols: usize, signed: bool) -> Option<Transaction> {
     let joined = row.join(" ");
     let date = cell(row, m.date)
         .and_then(util::parse_date)
         .or_else(|| util::find_date_in_line(&joined));
 
     let description = cell(row, m.description)
-        .map(|s| s.to_string())
+        .map(|s| s.trim().trim_start_matches('\'').to_string())
+        .filter(|s| !s.is_empty())
         .unwrap_or_else(|| {
             // Fall back to the longest non-numeric cell.
             row.iter()
@@ -468,8 +530,13 @@ fn row_to_txn(source: &str, line_no: usize, row: &[String], m: &ColMap, _ncols: 
             (None, None) => return None,
         }
     } else if let Some(a) = cell(row, m.amount).and_then(util::parse_amount) {
-        let dir = direction_from_type(cell(row, m.type_ind))
-            .unwrap_or_else(|| if a.value < 0.0 || a.negative_hint { Direction::Debit } else { Direction::Credit });
+        let dir = if a.value < 0.0 || a.negative_hint {
+            Direction::Debit
+        } else if signed {
+            Direction::Credit
+        } else {
+            direction_from_type(cell(row, m.type_ind)).unwrap_or_else(|| classify_text(&joined, &a))
+        };
         (a.magnitude(), dir)
     } else {
         // Last resort: scan the whole row text.
@@ -499,41 +566,124 @@ fn row_to_txn(source: &str, line_no: usize, row: &[String], m: &ColMap, _ncols: 
 fn direction_from_type(t: Option<&str>) -> Option<Direction> {
     let t = t?.to_lowercase();
     let t = t.trim();
-    if t == "c" || t == "cr" || t.contains("credit") {
+    if matches!(t, "c" | "cr" | "fpi" | "bgc" | "dep" | "in") || t.contains("credit") || t.contains("deposit") {
         Some(Direction::Credit)
-    } else if t == "d" || t == "dr" || t.contains("debit") {
+    } else if matches!(t, "d" | "dr" | "dd" | "d/d" | "so" | "s/o" | "deb" | "fpo" | "cpt" | "chq" | "pos" | "atm" | "out")
+        || t.contains("debit")
+        || t.contains("withdraw")
+        || t.contains("card payment")
+    {
         Some(Direction::Debit)
     } else {
         None
     }
 }
 
+/// Settle money-in vs money-out from the running balance. Works on one
+/// account's transactions in file order (oldest or newest first), including
+/// statements that print the balance only on some rows. `known_before[i]` is
+/// a balance known to apply just before `txns[i]` (e.g. "brought forward").
+/// Returns true if the balance trail was consistent enough to be applied.
+fn fix_directions_by_balance(txns: &mut [Transaction], known_before: &std::collections::HashMap<usize, f64>) -> bool {
+    let cents = |x: f64| (x * 100.0).round() as i64;
+    let n = txns.len();
+    if n == 0 {
+        return false;
+    }
+
+    // Walk in chronological order; `order` maps step -> index in `txns`.
+    let solve = |order: &[usize], use_known: bool| -> (usize, usize, Vec<(usize, Direction)>) {
+        let mut assigned: Vec<(usize, Direction)> = Vec::new();
+        let (mut solved, mut checked) = (0usize, 0usize);
+        let mut last_bal: Option<i64> = None;
+        let mut group: Vec<usize> = Vec::new();
+        for &i in order {
+            if use_known {
+                if let Some(b) = known_before.get(&i) {
+                    last_bal = Some(cents(*b));
+                    group.clear();
+                }
+            }
+            group.push(i);
+            let Some(b) = txns[i].balance else { continue };
+            let b = cents(b);
+            if let Some(p) = last_bal {
+                checked += group.len();
+                let delta = b - p;
+                let k = group.len();
+                if k <= 16 {
+                    // Find credit/debit signs whose sum equals the balance change,
+                    // preferring the combination closest to the current guess.
+                    let mut best: Option<(u32, u32)> = None; // (disagreements, mask)
+                    for mask in 0u32..(1u32 << k) {
+                        let mut sum = 0i64;
+                        let mut dis = 0u32;
+                        for (j, &ti) in group.iter().enumerate() {
+                            let credit = mask & (1 << j) != 0;
+                            let a = cents(txns[ti].amount);
+                            sum += if credit { a } else { -a };
+                            if credit != (txns[ti].direction == Direction::Credit) {
+                                dis += 1;
+                            }
+                        }
+                        if sum == delta && best.map_or(true, |(d, _)| dis < d) {
+                            best = Some((dis, mask));
+                        }
+                    }
+                    if let Some((_, mask)) = best {
+                        solved += k;
+                        for (j, &ti) in group.iter().enumerate() {
+                            let dir = if mask & (1 << j) != 0 { Direction::Credit } else { Direction::Debit };
+                            assigned.push((ti, dir));
+                        }
+                    }
+                }
+            }
+            last_bal = Some(b);
+            group.clear();
+        }
+        (solved, checked, assigned)
+    };
+
+    let fwd_order: Vec<usize> = (0..n).collect();
+    let rev_order: Vec<usize> = (0..n).rev().collect();
+    let fwd = solve(&fwd_order, true);
+    let rev = solve(&rev_order, false);
+    let (solved, checked, assigned) = if rev.0 > fwd.0 { rev } else { fwd };
+    // Only trust the trail when it explains most of what it could check.
+    if solved < 2 || solved * 10 < checked * 6 {
+        return false;
+    }
+    for (i, dir) in assigned {
+        txns[i].direction = dir;
+    }
+    true
+}
+
 // --------------------------- Text / PDF path ---------------------------
 
-fn text_to_txns(source: &str, lines: &[String], out: &mut Vec<Transaction>) {
+pub(crate) fn text_to_txns(source: &str, lines: &[String], out: &mut Vec<Transaction>) {
     // If this looks like a structured statement table with wrapped rows
     // (each transaction begins with a date + time, e.g. OPay/PDF exports),
     // reconstruct logical rows and parse the debit/credit/balance triple.
     let mut joined = lines.join("\n");
-
-    // Multi-account statement (e.g. Wallet + Savings in one PDF): each account
-    // section begins with its own "Total Credit" summary header. Merging
-    // accounts double-counts internal transfers (and would even absorb the
-    // second account's summary totals into the last row), so keep only the
-    // first account by truncating at the start of the second section.
-    let low = joined.to_lowercase();
-    let mut marks = low.match_indices("total credit");
-    if marks.next().is_some() {
-        if let Some((mut second, _)) = marks.next() {
-            while second > 0 && !joined.is_char_boundary(second) {
-                second -= 1;
+    if ROW_START.find_iter(&joined).count() >= 5 {
+        // Multi-account statement (e.g. Wallet + Savings in one PDF): each account
+        // section begins with its own "Total Credit" summary header. Merging
+        // accounts double-counts internal transfers (and would even absorb the
+        // second account's summary totals into the last row), so keep only the
+        // first account by truncating at the start of the second section.
+        let low = joined.to_lowercase();
+        let mut marks = low.match_indices("total credit");
+        if marks.next().is_some() {
+            if let Some((mut second, _)) = marks.next() {
+                while second > 0 && !joined.is_char_boundary(second) {
+                    second -= 1;
+                }
+                joined.truncate(second);
             }
-            joined.truncate(second);
         }
-    }
-
-    let starts: Vec<usize> = ROW_START.find_iter(&joined).map(|m| m.start()).collect();
-    if starts.len() >= 5 {
+        let starts: Vec<usize> = ROW_START.find_iter(&joined).map(|m| m.start()).collect();
         for w in 0..starts.len() {
             let s = starts[w];
             let e = if w + 1 < starts.len() { starts[w + 1] } else { joined.len() };
@@ -541,6 +691,16 @@ fn text_to_txns(source: &str, lines: &[String], out: &mut Vec<Transaction>) {
             parse_statement_row(source, w, &row, out);
         }
         return;
+    }
+
+    // Column statements with proper `.dd` amounts (most bank PDFs).
+    let decimal_lines = lines.iter().filter(|l| !strict_amounts(l).is_empty()).count();
+    if decimal_lines >= 3 {
+        let before = out.len();
+        statement_lines_to_txns(source, lines, out);
+        if out.len() > before {
+            return;
+        }
     }
     text_to_txns_lines(source, lines, out);
 }
@@ -585,6 +745,357 @@ fn parse_statement_row(source: &str, idx: usize, row: &str, out: &mut Vec<Transa
         source: source.to_string(),
         line_no: idx,
     });
+}
+
+// ---- Column statements: `date  details  paid out  paid in  balance` ----
+
+/// A money token with real `.dd` decimals found in a text line.
+struct Amt {
+    value: f64,
+    negative: bool,
+    bytes: std::ops::Range<usize>,
+    /// Character columns (not bytes) so they line up with header labels.
+    col_start: usize,
+    col_end: usize,
+}
+
+static STRICT_AMOUNT: Lazy<Regex> = Lazy::new(|| Regex::new(r"\d{1,3}(?:,\d{3})+\.\d{2}|\d+\.\d{2}").unwrap());
+static SUMMARY_LINE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r"(?ix)
+        \b(?: (?:brought|carried)\s+forward
+          | (?:opening|closing|start|starting|end|ending|previous|new|final)\s+balance
+          | balance\s+(?:on|at|as\s+at|b/f|c/f)\b
+          | total\s+(?:paid|money|payments?|receipts?|debits?|credits?|withdrawals?|deposits?|in\b|out\b|amount)
+          | totals?\s*:
+        )",
+    )
+    .unwrap()
+});
+static OPENING_LINE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)\b(brought\s+forward|b/f|(opening|start|starting|previous)\s+balance)").unwrap());
+static NOISE_LINE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r"(?ix)
+        overdraft | interest\s+rate | \b(?:aer|ear|apr|gross)\b | sort\s*code | account\s+(?:number|no\b|name)
+      | \b(?:iban|bic|swift)\b | page\s+\d+ | \bfscs\b | compensation\s+scheme | statement\s+(?:period|date|number|no\b)
+      | \blimit\b | % | protected\s+up\s+to",
+    )
+    .unwrap()
+});
+
+fn strict_amounts(line: &str) -> Vec<Amt> {
+    let bytes = line.as_bytes();
+    let mut out = Vec::new();
+    for m in STRICT_AMOUNT.find_iter(line) {
+        // Reject fragments of longer tokens (references, dates, percentages).
+        let before = line[..m.start()].chars().next_back();
+        let after = line[m.end()..].chars().next();
+        if before.map_or(false, |c| c.is_alphanumeric() || c == '.' || c == ',' || c == '/')
+            || after.map_or(false, |c| c.is_ascii_digit() || c == '%' || c == '/')
+            || (after == Some('.') && bytes.get(m.end() + 1).map_or(false, |b| b.is_ascii_digit()))
+        {
+            continue;
+        }
+        let Some(value) = util::parse_amount(m.as_str()).map(|x| x.magnitude()) else { continue };
+        // Sign: "-12.50", "£-12.50", "-£12.50", "12.50-", "12.50 DR", "(12.50)".
+        let lead: String = line[..m.start()].chars().rev().take(4).collect();
+        let lead = lead.trim_start();
+        let mut it = lead.chars();
+        let c1 = it.next();
+        let c2 = it.clone().find(|c| !c.is_whitespace());
+        let is_minus = |c: Option<char>| matches!(c, Some('-') | Some('\u{2212}') | Some('\u{2013}'));
+        let is_sym = |c: Option<char>| matches!(c, Some('£') | Some('$') | Some('€') | Some('₦'));
+        let tail = &line[m.end()..];
+        let tail_trim = tail.trim_start();
+        let suffix_neg = tail.starts_with('-')
+            || ["DR", "OD"].iter().any(|w| {
+                tail_trim.starts_with(w) && tail_trim[w.len()..].chars().next().map_or(true, |c| !c.is_alphanumeric())
+            });
+        let negative = is_minus(c1) || (is_sym(c1) && is_minus(c2)) || suffix_neg || (c1 == Some('(') && tail.starts_with(')'));
+        out.push(Amt {
+            value,
+            negative,
+            bytes: m.range(),
+            col_start: line[..m.start()].chars().count(),
+            col_end: line[..m.end()].chars().count(),
+        });
+    }
+    out
+}
+
+/// Column positions of a statement table header, in character columns.
+#[derive(Default, Clone)]
+struct TextCols {
+    out: Option<(usize, usize)>,
+    inn: Option<(usize, usize)>,
+    amount: Option<(usize, usize)>,
+    balance: Option<(usize, usize)>,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum ColKind {
+    Out,
+    In,
+    Amount,
+    Balance,
+}
+
+fn find_label(lower: &str, labels: &[&str]) -> Option<(usize, usize)> {
+    for lab in labels {
+        let mut from = 0;
+        while let Some(i) = lower[from..].find(lab) {
+            let s = from + i;
+            let e = s + lab.len();
+            let b = lower[..s].chars().next_back().map_or(true, |c| !c.is_alphanumeric());
+            let a = lower[e..].chars().next().map_or(true, |c| !c.is_alphanumeric());
+            if b && a {
+                return Some((lower[..s].chars().count(), lower[..e].chars().count()));
+            }
+            from = e;
+        }
+    }
+    None
+}
+
+/// Recognise a table header line and, when the text keeps its page layout
+/// (labels separated by runs of spaces), remember where each column sits.
+fn parse_text_header(line: &str) -> Option<TextCols> {
+    if !strict_amounts(line).is_empty() {
+        return None;
+    }
+    let lower = line.to_lowercase();
+    let cols = TextCols {
+        out: find_label(&lower, &["paid out", "money out", "payments out", "withdrawn", "withdrawals", "debits", "debit", "payments", "out"]),
+        inn: find_label(&lower, &["paid in", "money in", "payments in", "deposits", "credits", "credit", "receipts", "in"]),
+        amount: find_label(&lower, &["amount"]),
+        balance: find_label(&lower, &["balance"]),
+    };
+    let two_sided = cols.out.is_some() && cols.inn.is_some();
+    let signed = cols.amount.is_some() && cols.balance.is_some();
+    if !(two_sided || signed) || !(lower.contains("date") || cols.balance.is_some()) {
+        return None;
+    }
+    Some(cols)
+}
+
+impl TextCols {
+    /// True when the header came from layout-preserving text, so positions mean something.
+    fn positional(&self, line: &str) -> bool {
+        let spans: Vec<(usize, usize)> = [self.out, self.inn, self.amount, self.balance].into_iter().flatten().collect();
+        let lo = spans.iter().map(|s| s.0).min().unwrap_or(0);
+        let hi = spans.iter().map(|s| s.1).max().unwrap_or(0);
+        let region: String = line.chars().skip(lo).take(hi.saturating_sub(lo)).collect();
+        region.contains("  ")
+    }
+
+    fn classify(&self, a: &Amt) -> Option<ColKind> {
+        let dist = |span: (usize, usize)| -> usize {
+            let d = |x: usize, y: usize| x.abs_diff(y);
+            d(a.col_end, span.1).min(d(a.col_start, span.0)).min(d((a.col_start + a.col_end) / 2, (span.0 + span.1) / 2))
+        };
+        [(self.out, ColKind::Out), (self.inn, ColKind::In), (self.amount, ColKind::Amount), (self.balance, ColKind::Balance)]
+            .into_iter()
+            .filter_map(|(s, k)| s.map(|s| (dist(s), k)))
+            .min_by_key(|(d, _)| *d)
+            .map(|(_, k)| k)
+    }
+}
+
+fn statement_lines_to_txns(source: &str, lines: &[String], out: &mut Vec<Transaction>) {
+    // Year for dates printed without one ("5 Oct"): taken from the statement period.
+    let period_end = lines.iter().take(60).filter_map(|l| util::find_date_in_line(l)).max();
+    let fallback_year = period_end.map_or_else(|| chrono::Utc::now().year(), |d| d.year());
+    let yearless = |text: &str| -> Option<(NaiveDate, std::ops::Range<usize>)> {
+        let (d, at) = util::find_yearless_date(text, fallback_year)?;
+        // "28 Dec" on a statement ending in January belongs to the year before.
+        let d = match period_end {
+            Some(end) if d > end + chrono::Duration::days(31) => d.with_year(d.year() - 1).unwrap_or(d),
+            _ => d,
+        };
+        Some((d, at))
+    };
+
+    let first = out.len();
+    let mut cols: Option<TextCols> = None;
+    // Where the date column sits (from the header), so a date mentioned inside
+    // a description ("On 04 Oct") is not mistaken for the row's own date.
+    let mut date_col: Option<usize> = None;
+    let mut last_date: Option<NaiveDate> = None;
+    let mut pending: Vec<String> = Vec::new();
+    let mut known_before: std::collections::HashMap<usize, f64> = std::collections::HashMap::new();
+
+    for (i, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Some(h) = parse_text_header(line) {
+            let positional = h.positional(line);
+            date_col = if positional { find_label(&line.to_lowercase(), &["date"]).map(|s| s.0) } else { None };
+            cols = if positional { Some(h) } else { None };
+            pending.clear();
+            continue;
+        }
+        let amts = strict_amounts(line);
+        let indent = line.len() - line.trim_start().len();
+
+        // The row's own date: in the date column, or at the very start of the line.
+        let in_date_col = |start: usize| -> bool {
+            let c = line[..start].chars().count();
+            match date_col {
+                Some(dc) => c + 4 >= dc && c <= dc + 4,
+                None => c <= indent + 2,
+            }
+        };
+        let dated = util::find_date_span(line)
+            .filter(|(_, r)| in_date_col(r.start))
+            .or_else(|| yearless(line).filter(|(_, r)| in_date_col(r.start)));
+        let own_date = dated.as_ref().map(|(d, _)| *d);
+
+        // Balance summaries are not transactions, but an opening balance anchors the trail.
+        if SUMMARY_LINE.is_match(line) {
+            if OPENING_LINE.is_match(line) {
+                // The balance column if we know it, else the first figure after the label.
+                let label_end = OPENING_LINE.find(line).map_or(0, |m| m.end());
+                let pick = match &cols {
+                    Some(c) => amts.iter().find(|a| c.classify(a) == Some(ColKind::Balance)),
+                    None => None,
+                }
+                .or_else(|| amts.iter().find(|a| a.bytes.start >= label_end));
+                if let Some(a) = pick {
+                    known_before.insert(out.len() - first, if a.negative { -a.value } else { a.value });
+                }
+            }
+            if own_date.is_some() {
+                last_date = own_date;
+            }
+            pending.clear();
+            continue;
+        }
+        if own_date.is_some() {
+            last_date = own_date;
+        }
+
+        // Text of the line without figures, symbols or its own date.
+        let mut text = line.to_string();
+        let mut cut: Vec<std::ops::Range<usize>> = amts.iter().map(|a| a.bytes.clone()).collect();
+        if let Some((_, r)) = &dated {
+            cut.push(r.clone());
+        }
+        cut.sort_by(|a, b| b.start.cmp(&a.start));
+        for r in cut {
+            text.replace_range(r, " ");
+        }
+        let text: String = text.chars().filter(|c| !"₦$£€¥₹₵₿₩".contains(*c)).collect();
+        // Drop signs and brackets left behind by the figures we removed.
+        let text = text
+            .split_whitespace()
+            .filter(|w| !w.chars().all(|c| "-\u{2212}\u{2013}()+".contains(c)))
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        if amts.is_empty() {
+            // Wrapped description text: belongs to the neighbouring transaction.
+            if last_date.is_some() && text.chars().count() <= 70 && !NOISE_LINE.is_match(line) && text.chars().any(|c| c.is_alphabetic()) {
+                if pending.len() < 3 {
+                    pending.push(text);
+                }
+            } else {
+                pending.clear();
+            }
+            continue;
+        }
+
+        // Figures before the first dated row (limits, summaries) are not transactions.
+        let Some(date) = own_date.or(last_date) else { continue };
+        if own_date.is_none() && NOISE_LINE.is_match(line) {
+            continue;
+        }
+
+        // Which figure is the transaction and which is the running balance?
+        let mut txn: Option<(&Amt, Option<Direction>)> = None;
+        let mut balance: Option<f64> = None;
+        match &cols {
+            Some(c) => {
+                for a in &amts {
+                    match c.classify(a) {
+                        Some(ColKind::Balance) => balance = Some(if a.negative { -a.value } else { a.value }),
+                        Some(ColKind::Out) if txn.is_none() => txn = Some((a, Some(Direction::Debit))),
+                        Some(ColKind::In) if txn.is_none() => txn = Some((a, Some(Direction::Credit))),
+                        Some(ColKind::Amount) if txn.is_none() => {
+                            txn = Some((a, Some(if a.negative { Direction::Debit } else { Direction::Credit })))
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            None => {
+                if amts.len() >= 2 {
+                    let b = &amts[amts.len() - 1];
+                    balance = Some(if b.negative { -b.value } else { b.value });
+                    txn = Some((&amts[amts.len() - 2], None));
+                } else {
+                    txn = Some((&amts[0], None));
+                }
+            }
+        }
+        let Some((a, dir)) = txn else {
+            // A balance on its own line: remember it for the trail.
+            if let Some(b) = balance {
+                known_before.insert(out.len() - first, b);
+            }
+            continue;
+        };
+        if a.value == 0.0 {
+            continue;
+        }
+        let direction = dir.unwrap_or_else(|| {
+            if a.negative {
+                Direction::Debit
+            } else {
+                classify_text(line, &Money { value: a.value, negative_hint: false })
+            }
+        });
+
+        // Attach wrapped description lines to the right transaction.
+        let mut description = text;
+        if !pending.is_empty() {
+            let extra = pending.join(" ");
+            if own_date.is_some() {
+                if let Some(prev) = out[first..].last_mut() {
+                    prev.description = clean(&format!("{} {}", prev.description, extra));
+                    prev.raw = clean(&format!("{} {}", prev.raw, extra));
+                }
+            } else {
+                description = clean(&format!("{extra} {description}"));
+            }
+            pending.clear();
+        }
+        let raw = clean(&format!("{description} {}", clean(line)));
+        out.push(Transaction {
+            date: Some(date),
+            time: util::find_time_in_line(line),
+            description: if description.is_empty() { clean(line) } else { description },
+            amount: a.value,
+            direction,
+            balance,
+            raw,
+            source: source.to_string(),
+            line_no: i,
+        });
+    }
+    // Wrapped text after the final row.
+    if !pending.is_empty() && pending.len() <= 2 {
+        if let Some(prev) = out[first..].last_mut() {
+            let extra = pending.join(" ");
+            prev.description = clean(&format!("{} {}", prev.description, extra));
+            prev.raw = clean(&format!("{} {}", prev.raw, extra));
+        }
+    }
+
+    // The running balance has the final say on money in vs money out.
+    fix_directions_by_balance(&mut out[first..], &known_before);
 }
 
 fn text_to_txns_lines(source: &str, lines: &[String], out: &mut Vec<Transaction>) {
@@ -641,18 +1152,22 @@ fn text_to_txns_lines(source: &str, lines: &[String], out: &mut Vec<Transaction>
 }
 
 const DEBIT_WORDS: &[&str] = &[
-    "withdrawal", "debit", " dr", "pos ", "atm", "transfer to", "payment", "purchase",
-    "charge", "fee", "levy", "vat", "bill", "airtime", "outflow", "paid out", "paid to", "sent to",
+    "withdrawal", "debit", "transfer to", "payment", "purchase", "charge", "fee", "levy", "vat", "bill",
+    "airtime", "outflow", "paid out", "paid to", "sent to", "standing order", "contactless", "cash machine",
 ];
 const CREDIT_WORDS: &[&str] = &[
-    "deposit", "credit", " cr", "salary", "transfer from", "received", "refund", "reversal",
-    "inflow", "paid in", "received from", "interest", "income", "lodgement",
+    "deposit", "credit", "salary", "transfer from", "payment from", "received", "refund", "reversal",
+    "inflow", "paid in", "received from", "interest", "income", "lodgement", "cashback",
 ];
+// Short bank codes only count as whole words ("CR" must not match "CROYDON").
+const DEBIT_CODES: &[&str] = &["dr", "pos", "atm", "dd", "so", "vis", "deb", "fpo", "cpt", "chq", "chg", "bp"];
+const CREDIT_CODES: &[&str] = &["cr", "fpi", "bgc", "dep"];
 
 fn classify_text(line: &str, money: &Money) -> Direction {
     let l = format!(" {} ", line.to_lowercase());
-    let debit_hit = DEBIT_WORDS.iter().any(|w| l.contains(w));
-    let credit_hit = CREDIT_WORDS.iter().any(|w| l.contains(w));
+    let words: Vec<&str> = l.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    let debit_hit = DEBIT_WORDS.iter().any(|w| l.contains(w)) || DEBIT_CODES.iter().any(|c| words.contains(c));
+    let credit_hit = CREDIT_WORDS.iter().any(|w| l.contains(w)) || CREDIT_CODES.iter().any(|c| words.contains(c));
     match (debit_hit, credit_hit) {
         (true, false) => Direction::Debit,
         (false, true) => Direction::Credit,

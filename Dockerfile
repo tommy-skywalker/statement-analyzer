@@ -14,9 +14,11 @@ RUN touch src/main.rs && cargo build --release
 
 # ---- runtime stage ----
 FROM debian:bookworm-slim
-# ca-certificates for TLS; p7zip-full + unar enable RAR/7z archive extraction; tar is built in
+# ca-certificates for TLS; p7zip-full + unar enable RAR/7z archive extraction; tar is built in.
+# poppler-utils provides `pdftotext -layout`, which keeps bank-statement columns
+# aligned so money out / money in can be told apart in PDF statements.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates p7zip-full unar \
+    && apt-get install -y --no-install-recommends ca-certificates p7zip-full unar poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/target/release/statement-analyzer /usr/local/bin/statement-analyzer

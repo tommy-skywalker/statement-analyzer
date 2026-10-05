@@ -138,17 +138,25 @@
   .panel-head h3{font-size:15px;font-weight:700}
 
   .tscroll{max-height:560px;overflow:auto}
-  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;table-layout:fixed}
+  th.c-date{width:158px} th.c-src{width:150px} th.c-type{width:96px} th.c-amt{width:158px}
+  table.one-src .c-src{display:none}
   thead th{position:sticky;top:0;background:var(--card);text-align:left;font-size:11px;letter-spacing:.05em;
-    text-transform:uppercase;color:var(--faint);font-weight:700;padding:11px 20px;border-bottom:1px solid var(--line-2)}
-  tbody td{padding:13px 20px;border-bottom:1px solid var(--line-2);color:var(--ink-2);vertical-align:middle}
+    text-transform:uppercase;color:var(--faint);font-weight:700;padding:11px 14px;border-bottom:1px solid var(--line-2);white-space:nowrap}
+  tbody td{padding:13px 14px;border-bottom:1px solid var(--line-2);color:var(--ink-2);vertical-align:middle}
   tbody tr:last-child td{border-bottom:none}
   tbody tr:hover{background:var(--soft)}
   td.date{color:var(--ink);font-weight:600;white-space:nowrap}
-  td.desc{color:var(--ink-2);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  td.src{color:var(--muted);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px}
+  td.desc{color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  td.src{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px}
   td.amt{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
   td.amt.green{color:var(--green)} td.amt.red{color:var(--red)}
+  td.date .tm{color:var(--muted);font-weight:500}
+  @media(max-width:620px){
+    table{font-size:12.5px} thead th,tbody td{padding-left:10px;padding-right:10px}
+    th.c-date{width:96px} th.c-amt{width:124px} .c-type{display:none}
+    td.date .tm{display:block;font-size:11.5px}
+  }
   .pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;padding:4px 11px;border-radius:999px;white-space:nowrap}
   .pill .dot{width:7px;height:7px;border-radius:50%}
   .pill.credit{background:var(--green-bg);color:var(--green)} .pill.credit .dot{background:var(--green)}
@@ -349,13 +357,13 @@
     <p>&gt; Drop a statement, enter a query, get an instant debit/credit breakdown.</p>
     <div class="searchbar">
       <button class="file-btn" id="fileBtn"><svg class="svic"><use href="#i-upload"/></svg> Choose file</button>
-      <input class="search-input" id="query" placeholder='Ask naturally: "chicken last month" or "20k-45k I sent a few hours after I paid ndo hotel 30k"' autocomplete="off" />
+      <input class="search-input" id="query" placeholder='Ask naturally: "chicken last month" or "rent over 100k this year"' autocomplete="off" />
       <button class="go-btn" id="analyzeBtn">Analyze</button>
     </div>
     <div class="heronote" id="heronote">PDF · CSV · XLSX · TXT · ZIP/RAR/7z &nbsp;·&nbsp; Smart search understands dates &amp; "spent on / received from" &nbsp;·&nbsp; blank = analyse everything</div>
     <div class="privacy"><svg class="svic"><use href="#i-lock"/></svg> <span>Your statement is processed <b>in memory</b> and <b>deleted right after</b>. Nothing is saved to our servers.</span></div>
     <input type="file" id="fileInput" hidden
-      accept=".pdf,.csv,.tsv,.xlsx,.xls,.xlsm,.ods,.txt,.log,.zip,.rar,.7z,.tar,.gz" />
+      accept=".pdf,.csv,.tsv,.xlsx,.xls,.xlsm,.ods,.txt,.log,.qif,.ofx,.qfx,.zip,.rar,.7z,.tar,.gz" />
   </section>
 
   <div class="loading" id="loading"><div class="spinner"></div><div>Parsing &amp; scanning transactions…</div></div>
@@ -388,7 +396,7 @@
           <div class="tscroll">
             <table>
               <thead><tr>
-                <th>Date</th><th>Description</th><th>Source</th><th>Type</th><th style="text-align:right">Amount</th>
+                <th class="c-date">Date</th><th>Description</th><th class="c-src">Source</th><th class="c-type">Type</th><th class="c-amt" style="text-align:right">Amount</th>
               </tr></thead>
               <tbody id="txBody"></tbody>
             </table>
@@ -554,8 +562,9 @@ function render(d){
   $("resTitle").textContent = d.query ? `Results for “${d.query}”` : "Analysis of all transactions";
   $("resSub").innerHTML = `${escapeHtml(d.file.name)} · ${d.file.kind.toUpperCase()} · ${d.file.size_human} · `
     + `scanned ${fmtInt(d.summary.total_transactions_scanned)} · matched <b>${fmtInt(d.summary.matched_transactions)}</b> · `
-    + `${d.elapsed_ms} ms · ${d.throughput_mb_s} MB/s`;
-  $("curChip").innerHTML = `<span class="sym">${escapeHtml(sym)}</span> ${escapeHtml(c.code)}`;
+    + `analysed in ${d.elapsed_ms<1?'under 1':Math.round(d.elapsed_ms)} ms`;
+  const curKnown = c.code!=="UNKNOWN";
+  $("curChip").innerHTML = curKnown ? `<span class="sym">${escapeHtml(sym)}</span> ${escapeHtml(c.code)}` : "Currency not detected";
 
   // Smart-search interpretation chip
   const itp=d.interpreted;
@@ -583,16 +592,18 @@ function render(d){
     meterRow("Money in share", inFrac, pct(inFrac))
    +meterRow("Money out share", outFrac, pct(outFrac))
    +meterRow("Match rate", matchFrac, `${fmtInt(d.summary.matched_transactions)}/${fmtInt(d.summary.total_transactions_scanned)}`)
-   +meterRow("Credit vs debit count", d.credit.count+d.debit.count>0?d.credit.count/(d.credit.count+d.debit.count):0, `${fmtInt(d.credit.count)}:${fmtInt(d.debit.count)}`);
+   +meterRow("In vs out count", d.credit.count+d.debit.count>0?d.credit.count/(d.credit.count+d.debit.count):0, `${fmtInt(d.credit.count)}:${fmtInt(d.debit.count)}`);
 
   const tx=d.matched||[];
   $("txCount").textContent = tx.length ? `${tx.length}${d.matched_truncated?" (capped)":""} shown` : "";
+  // The source column only earns its space when an archive holds several files.
+  $("txBody").closest("table").classList.toggle("one-src", new Set(tx.map(t=>t.source)).size<=1);
   $("txBody").innerHTML = tx.length ? tx.map(t=>`
     <tr>
-      <td class="date">${t.date?escapeHtml(t.date):"··"}${t.time?' <span class="muted" style="font-weight:500">'+escapeHtml(t.time)+'</span>':''}</td>
+      <td class="date">${t.date?escapeHtml(t.date):"··"}${t.time?' <span class="tm">'+escapeHtml(t.time)+'</span>':''}</td>
       <td class="desc" title="${escapeHtml(t.description)}">${escapeHtml(t.description)}</td>
-      <td class="src" title="${escapeHtml(t.source)}">${escapeHtml(sourceShort(t.source))}</td>
-      <td><span class="pill ${t.direction}"><span class="dot"></span>${cap(t.direction)}</span></td>
+      <td class="src c-src" title="${escapeHtml(t.source)}">${escapeHtml(sourceShort(t.source))}</td>
+      <td class="c-type"><span class="pill ${t.direction}"><span class="dot"></span>${cap(t.direction)}</span></td>
       <td class="amt ${t.direction==='credit'?'green':'red'}">${t.direction==='credit'?'+':'−'}${sym}${fmtNum(t.amount)}</td>
     </tr>`).join("") : `<tr><td colspan="5" class="empty">No transactions matched this keyword.</td></tr>`;
 
@@ -611,14 +622,17 @@ function render(d){
   $("creditSide").innerHTML = sideCard(d.credit,"credit",sym);
   $("debitSide").innerHTML  = sideCard(d.debit,"debit",sym);
 
-  $("curCard").innerHTML = `
+  $("curCard").innerHTML = curKnown ? `
     <div class="lab">Detected currency</div>
     <div class="big"><span>${escapeHtml(sym)}</span> ${escapeHtml(c.code)}</div>
     <div class="sub">${escapeHtml(c.name)}</div>
     <div class="conf">
       <span>Detected by ${escapeHtml(c.detected_by)}</span>
       <span class="badge">${Math.round((c.confidence||0)*100)}% confidence</span>
-    </div>`;
+    </div>` : `
+    <div class="lab">Currency</div>
+    <div class="big">Not detected</div>
+    <div class="sub">This file does not name a currency, so amounts are shown as plain numbers.</div>`;
 
   $("warns").innerHTML = (d.warnings||[]).map(w=>`<div class="warn">${svic("i-alert")} <span>${escapeHtml(w)}</span></div>`).join("");
 
@@ -679,7 +693,7 @@ function reportLines(forPdf){
   L.push('Query:    '+(d.query||'(all transactions)'));
   L.push('Currency: '+c.code+' - '+c.name+'  ('+Math.round((c.confidence||0)*100)+'% confidence)');
   L.push('Scanned:  '+d.summary.total_transactions_scanned+'    Matched: '+d.summary.matched_transactions);
-  L.push('Speed:    '+d.elapsed_ms+' ms  ('+d.throughput_mb_s+' MB/s)');
+  L.push('Speed:    '+d.elapsed_ms+' ms');
   L.push('');
   L.push('SUMMARY');
   L.push('  Total credit (in):  '+fm(d.credit.total_formatted)+'   ('+d.credit.count+' txns)');
@@ -957,7 +971,16 @@ function hideError(){$("error").classList.remove("show");}
   const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
 
   // Entirely fictional sample data: generic Nigerian names, fake numbers.
+  // Covers the six months up to today, so "last 3 months" always has data.
+  const now=new Date();
+  const pad=(n)=>String(n).padStart(2,"0");
+  const months=[];
+  for(let k=5;k>=0;k--){ const d=new Date(now.getFullYear(),now.getMonth()-k,1); months.push([d.getFullYear(),d.getMonth()+1]); }
+  const MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const demoName=`Demo_Wallet_Statement_${MON[months[0][1]-1]}-${MON[months[5][1]-1]}_${months[5][0]}.csv`;
+
   function demoCsv(){
+    const q=(v)=>'"'+String(v).replace(/"/g,'""')+'"'; // descriptions contain commas
     const rows=["Date,Description,Debit(₦),Credit(₦),Balance(₦)"];
     const debits=[
       ["Transfer to FOOD CONCEPTS PLC - SURULERE CHICKEN REPUBLIC | POS",8000,26000],
@@ -973,24 +996,30 @@ function hideError(){$("error").classList.remove("show");}
     ];
     const credits=[
       ["Transfer from EMEKA OBI | Zenith Bank | 2010000006 | Lunch",2000,50000],
-      ["SALARY CREDIT FROM ACME LTD",250000,450000],
       ["Transfer from AISHA BELLO | OPay | 8040000007",700,20000],
       ["Wallet Withdrawal(Transaction Payment)",300,8000],
       ["Transfer from FUNKE ADEYEMI | UBA | 1010000008",58,9000],
     ];
     let bal=120000;
-    for(let m=1;m<=6;m++){
+    months.forEach(([y,m],mi)=>{
+      // Days never run past today in the current month.
+      const lastDay=mi===5?now.getDate():27;
+      const picks=[];
       const n=28+Math.floor(Math.random()*22);
       for(let i=0;i<n;i++){
-        const day=String(1+Math.floor(Math.random()*27)).padStart(2,"0");
-        const credit=Math.random()<0.34;
+        const credit=Math.random()<0.3;
         const src=credit?credits[Math.floor(Math.random()*credits.length)]
                         :debits[Math.floor(Math.random()*debits.length)];
+        picks.push([1+Math.floor(Math.random()*Math.min(27,lastDay)),src,credit]);
+      }
+      picks.push([1,["SALARY CREDIT FROM ACME LTD",250000,450000],true]); // paid on the 1st, every month
+      picks.sort((a,b)=>a[0]-b[0]);
+      for(const [day,src,credit] of picks){
         const amt=(src[1]+Math.random()*(src[2]-src[1])).toFixed(2);
         bal=Math.max(0,bal+(credit?+amt:-amt));
-        rows.push(`2026-0${m}-${day},${src[0]},${credit?"":amt},${credit?amt:""},${bal.toFixed(2)}`);
+        rows.push(`${y}-${pad(m)}-${pad(day)},${q(src[0])},${credit?"":amt},${credit?amt:""},${bal.toFixed(2)}`);
       }
-    }
+    });
     return rows.join("\n");
   }
 
@@ -1001,12 +1030,12 @@ function hideError(){$("error").classList.remove("show");}
 
   async function start(){
     await sleep(900);
-    const f=new File([demoCsv()],"Demo_Wallet_Statement_Jan-Jun_2026.csv",{type:"text/csv"});
+    const f=new File([demoCsv()],demoName,{type:"text/csv"});
     const dt=new DataTransfer(); dt.items.add(f);
     fileInput.files=dt.files; setFile(f);
     const queries=[
       "chicken republic",
-      "how much did I spend on betting this year",
+      "how much did I spend on betting",
       "adewale",
       "salary last 3 months",
       "everything sent to ngozi"

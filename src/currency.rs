@@ -72,6 +72,22 @@ pub fn detect(text: &str) -> Currency {
         }
     }
 
+    // UK-only banking terms are a soft hint for sterling when the file carries
+    // no currency symbol or code (most UK bank CSV exports do not).
+    if scores.is_empty() {
+        let uk = count_word(&lower, "sort code") + UK_SORT_ACCOUNT.find_iter(text).take(5).count();
+        if uk > 0 {
+            let def = DEFS.iter().find(|d| d.code == "GBP").unwrap();
+            return Currency {
+                symbol: def.symbol.to_string(),
+                code: def.code.to_string(),
+                name: def.name.to_string(),
+                confidence: 0.6,
+                detected_by: "UK sort code".to_string(),
+            };
+        }
+    }
+
     if let Some((&idx, &(score, how))) = scores.iter().max_by_key(|(_, (s, _))| *s) {
         let total: u64 = scores.values().map(|(s, _)| *s).sum();
         let def = &DEFS[idx];
@@ -88,14 +104,19 @@ pub fn detect(text: &str) -> Currency {
         };
     }
 
+    // No symbol: amounts are shown as plain numbers rather than with a "?".
     Currency {
-        symbol: "?".into(),
+        symbol: String::new(),
         code: "UNKNOWN".into(),
-        name: "Undetermined".into(),
+        name: "Not detected".into(),
         confidence: 0.0,
         detected_by: "none".into(),
     }
 }
+
+/// A UK sort code followed by an 8-digit account number ("20-00-00 12345678").
+static UK_SORT_ACCOUNT: once_cell::sync::Lazy<regex::Regex> =
+    once_cell::sync::Lazy::new(|| regex::Regex::new(r"\b\d{2}-\d{2}-\d{2}\b[ ,]+\d{8}\b").unwrap());
 
 /// Count whole-word (boundary-delimited) occurrences of `word` in `text`.
 fn count_word(text: &str, word: &str) -> usize {

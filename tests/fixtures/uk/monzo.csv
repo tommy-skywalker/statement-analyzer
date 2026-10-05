@@ -1,0 +1,11 @@
+Transaction ID,Date,Time,Type,Name,Emoji,Category,Amount,Currency,Local amount,Local currency,Notes and #tags,Address,Receipt,Description,Category split,Money Out,Money In
+tx_0000A0000xYz,01/09/2026,9:15:00,Card payment,Card Payment To Tesco Stores 3297,,General,-23.50,GBP,-23.50,GBP,,,,CARD PAYMENT TO TESCO STORES 3297,,-23.5,
+tx_0000A0001xYz,02/09/2026,10:15:01,Direct Debit,Direct Debit British Gas,,General,-45.00,GBP,-45.00,GBP,,,,DIRECT DEBIT BRITISH GAS,,-45.0,
+tx_0000A0002xYz,03/09/2026,11:15:02,Faster payment,Faster Payment From J Smith,,General,250.00,GBP,250.00,GBP,,,,FASTER PAYMENT FROM J SMITH,,,250.0
+tx_0000A0003xYz,05/09/2026,12:15:03,Direct Debit,Croydon Council Tax,,General,-132.00,GBP,-132.00,GBP,,,,CROYDON COUNCIL TAX,,-132.0,
+tx_0000A0004xYz,08/09/2026,13:15:04,Card payment,Dr Martens London,,General,-89.99,GBP,-89.99,GBP,,,,DR MARTENS LONDON,,-89.99,
+tx_0000A0005xYz,15/09/2026,14:15:05,Faster payment,Acme Ltd Salary,,General,2100.00,GBP,2100.00,GBP,,,,ACME LTD SALARY,,,2100.0
+tx_0000A0006xYz,18/09/2026,15:15:06,Card payment,Standing Order Landlord Rent,,General,-950.00,GBP,-950.00,GBP,,,,STANDING ORDER LANDLORD RENT,,-950.0,
+tx_0000A0007xYz,22/09/2026,16:15:07,Card payment,Tfl Travel Charge,,General,-8.10,GBP,-8.10,GBP,,,,TFL TRAVEL CHARGE,,-8.1,
+tx_0000A0008xYz,25/09/2026,17:15:08,Faster payment,Amazon Refund,,General,19.99,GBP,19.99,GBP,,,,AMAZON REFUND,,,19.99
+tx_0000A0009xYz,28/09/2026,18:15:09,Card payment,Cash Withdrawal Atm High St,,General,-60.00,GBP,-60.00,GBP,,,,CASH WITHDRAWAL ATM HIGH ST,,-60.0,

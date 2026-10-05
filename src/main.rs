@@ -12,6 +12,8 @@ mod parsers;
 mod security;
 mod store;
 mod util;
+#[cfg(test)]
+mod uk_tests;
 
 use axum::{
     extract::{ConnectInfo, DefaultBodyLimit, Multipart, Query, State},
@@ -342,7 +344,6 @@ async fn analyze(
         return too_many();
     }
 
-    let t0 = std::time::Instant::now();
     let mut filename: Option<String> = None;
     let mut file_bytes: Option<Vec<u8>> = None;
     let mut query = String::new();
@@ -405,6 +406,8 @@ async fn analyze(
     let visitor = sanitize_visitor(&visitor);
     let size = bytes.len();
 
+    // Time the analysis itself; the upload over the network is not the engine's speed.
+    let t0 = std::time::Instant::now();
     let (mut result, doc_opt) = match tokio::task::spawn_blocking({
         let fname = filename.clone();
         let q = query.clone();
